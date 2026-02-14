@@ -8,6 +8,7 @@ Sonder is a Telegram-first conversational personal knowledge system built on pi-
 - Save contract: `/save <url> [#tags...]`
 - Ask contract: `/ask <itemId> <question>`
 - List contract: `/list [limit]`
+- Find contract: `/find <query> [limit]`
 - Annotation contracts: `/annotate <itemId> <text> [#tags...]`, `/ann list <itemId>`, `/ann del <annotationId>`
 - Viewer annotation actions: select text then `highlight | underline | note`, with edit/delete in sidebar
 - Dialogue mode contracts: `/open [itemId]`, `/where`, `/exit`, `/sessions <itemId>`, `/resume <sessionId>`
@@ -71,6 +72,12 @@ List with explicit limit:
 
 ```bash
 node dist/main.js --root ./.sonder-data /list 10
+```
+
+Find relevant items:
+
+```bash
+node dist/main.js --root ./.sonder-data /find "language design" 5
 ```
 
 Ask an item (replace `ITEM_ID` with a real ID):
@@ -139,6 +146,7 @@ Dialogue usage in Telegram:
 /sessions <itemId>  # list sessions for item
 /resume <sessionId> # resume item session
 /history [sessionId] # show recent turns (active or explicit session)
+/find <query> [limit] # keyword retrieval over items/annotations/content
 ```
 
 Active dialogue mode is persisted per chat in SQLite, so mode/session can survive process restart.

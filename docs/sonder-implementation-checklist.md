@@ -30,7 +30,7 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 
 - [x] Implement Telegram adapter (`transport/telegram.ts`)
 - [ ] Add per-chat queue (mom-style)
-- [ ] Add command router for `/save`, `/find`, `/open`, `/ask`, `/exit`, `/where`, `/sessions`, `/resume`, `/history`
+- [x] Add command router for `/save`, `/find`, `/open`, `/ask`, `/exit`, `/where`, `/sessions`, `/resume`, `/history`
 - [x] Implement command contract for MVP:
   - [x] `/save <url> [#tags...]`
   - [x] `/ask <itemId> <question>`
@@ -92,9 +92,10 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 ## 7) Retrieval (`/find`, `/open`)
 
 - [ ] Metadata filters (source/time/tags/topic/space)
-- [ ] Keyword search on extracted text + annotation text/comment
+- [x] Keyword search on extracted text + annotation text/comment (MVP `/find`)
 - [ ] Embedding generation (item-level MVP)
 - [ ] Hybrid ranking (filter + keyword + vector)
+- [x] `/find <query> [limit]` returns keyword-ranked items with match reasons
 - [ ] `/open` returns compact item card + key annotations + latest dialogue pointers
 - [x] `/open` launches local snapshot annotation viewer for direct highlighting/notes
 - [x] `/open` enters item-anchored dialogue space (sets active dialogue context)

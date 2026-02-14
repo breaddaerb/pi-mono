@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -131,6 +131,60 @@ describe("SonderApp", () => {
 			app.close();
 			await server.close();
 		}
+	});
+
+	it("finds saved items by keyword across url tags annotations and content", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+		});
+
+		app.itemsRepo.create({
+			id: "item_find_1",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com/agent-language",
+			whyNote: null,
+			tags: ["agents"],
+			topic: null,
+			space: null,
+		});
+		const extractedPath = join(root, "find-extracted.txt");
+		writeFileSync(extractedPath, "language design for agents", "utf8");
+		app.artifactsRepo.create({
+			id: "art_find_1",
+			itemId: "item_find_1",
+			kind: "extracted-text",
+			path: extractedPath,
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+		app.createAnnotation({
+			itemId: "item_find_1",
+			type: "note",
+			text: "agent memory",
+			comment: "important",
+			tags: ["memory"],
+		});
+
+		const findResult = await app.processCommand("/find memory 10");
+		expect(findResult.ok).toBe(true);
+		if (!findResult.ok || findResult.value.type !== "find") {
+			throw new Error("Expected find result");
+		}
+		expect(findResult.value.items.length).toBeGreaterThan(0);
+		expect(findResult.value.items[0].id).toBe("item_find_1");
+		expect(findResult.value.items[0].reasons).toContain("annotations");
+
+		app.close();
 	});
 
 	it("creates lists and deletes annotations via commands", async () => {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { type ParseTelegramCommandError, parseTelegramCommand } from "../commands/parse-command.js";
@@ -76,6 +76,14 @@ export interface SonderAnnotationItem {
 	createdAt: string;
 }
 
+export interface SonderFindItem {
+	id: string;
+	originalUrl: string;
+	tags: string[];
+	score: number;
+	reasons: string[];
+}
+
 export type SonderCommandResult =
 	| {
 			type: "save";
@@ -97,6 +105,11 @@ export type SonderCommandResult =
 	| {
 			type: "list";
 			items: SonderListItem[];
+	  }
+	| {
+			type: "find";
+			query: string;
+			items: SonderFindItem[];
 	  }
 	| {
 			type: "annotate";
@@ -347,6 +360,16 @@ export class SonderApp {
 					},
 				};
 			}
+			if (parsed.value.type === "find") {
+				return {
+					ok: true,
+					value: {
+						type: "find",
+						query: parsed.value.query,
+						items: this.findItems(parsed.value.query, parsed.value.limit),
+					},
+				};
+			}
 			if (parsed.value.type === "annotate") {
 				const annotation = this.createAnnotation({
 					itemId: parsed.value.itemId,
@@ -472,6 +495,87 @@ export class SonderApp {
 			url,
 			tags,
 		};
+	}
+
+	private findItems(query: string, limit: number): SonderFindItem[] {
+		const normalizedQuery = query.trim().toLowerCase();
+		if (!normalizedQuery) {
+			return [];
+		}
+		const queryTerms = normalizedQuery.split(/\s+/).filter((term) => term.length > 0);
+		const items = this.itemsRepo.listRecent(500);
+		const scored: SonderFindItem[] = [];
+
+		for (const item of items) {
+			let score = 0;
+			const reasons: string[] = [];
+			const urlLower = item.originalUrl.toLowerCase();
+			const tagsLower = item.tags.map((tag) => tag.toLowerCase());
+
+			for (const term of queryTerms) {
+				if (urlLower.includes(term)) {
+					score += 3;
+					if (!reasons.includes("url")) {
+						reasons.push("url");
+					}
+				}
+				if (tagsLower.some((tag) => tag.includes(term))) {
+					score += 4;
+					if (!reasons.includes("tags")) {
+						reasons.push("tags");
+					}
+				}
+			}
+
+			const annotations = this.annotationsRepo.listByItemId(item.id);
+			for (const annotation of annotations) {
+				const text = `${annotation.text ?? ""} ${annotation.comment ?? ""}`.toLowerCase();
+				for (const term of queryTerms) {
+					if (text.includes(term)) {
+						score += 5;
+						if (!reasons.includes("annotations")) {
+							reasons.push("annotations");
+						}
+					}
+				}
+			}
+
+			const extractedText = this.readExtractedTextForItem(item.id).toLowerCase();
+			for (const term of queryTerms) {
+				if (term.length >= 3 && extractedText.includes(term)) {
+					score += 2;
+					if (!reasons.includes("content")) {
+						reasons.push("content");
+					}
+				}
+			}
+
+			if (score <= 0) {
+				continue;
+			}
+			scored.push({
+				id: item.id,
+				originalUrl: item.originalUrl,
+				tags: item.tags,
+				score,
+				reasons,
+			});
+		}
+
+		scored.sort((left, right) => right.score - left.score || right.id.localeCompare(left.id));
+		return scored.slice(0, Math.max(1, Math.floor(limit)));
+	}
+
+	private readExtractedTextForItem(itemId: string): string {
+		const artifact = this.artifactsRepo.listByItemId(itemId).find((candidate) => candidate.kind === "extracted-text");
+		if (!artifact) {
+			return "";
+		}
+		try {
+			return readFileSync(artifact.path, "utf8");
+		} catch {
+			return "";
+		}
 	}
 
 	private selectAnnotationArtifactId(itemId: string): string {

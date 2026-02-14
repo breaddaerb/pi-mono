@@ -2,6 +2,7 @@ export type ParsedTelegramCommand =
 	| ParsedSaveCommand
 	| ParsedAskCommand
 	| ParsedListCommand
+	| ParsedFindCommand
 	| ParsedAnnotateCommand
 	| ParsedAnnotationListCommand
 	| ParsedAnnotationDeleteCommand;
@@ -20,6 +21,12 @@ export interface ParsedAskCommand {
 
 export interface ParsedListCommand {
 	type: "list";
+	limit: number;
+}
+
+export interface ParsedFindCommand {
+	type: "find";
+	query: string;
 	limit: number;
 }
 
@@ -163,6 +170,42 @@ function parseListCommand(input: string): ParseTelegramCommandResult {
 	};
 }
 
+function parseFindCommand(input: string): ParseTelegramCommandResult {
+	const raw = input.trim();
+	const body = raw.slice("/find".length).trim();
+	if (!body) {
+		return {
+			ok: false,
+			error: { code: "MISSING_ARGUMENTS", message: "Expected: /find <query> [limit]" },
+		};
+	}
+
+	const segments = body.split(/\s+/).filter((segment) => segment.length > 0);
+	let limit = 10;
+	let querySegments = segments;
+	const last = segments[segments.length - 1];
+	if (last && /^\d+$/.test(last)) {
+		limit = Number.parseInt(last, 10);
+		querySegments = segments.slice(0, -1);
+	}
+	const query = querySegments.join(" ").trim();
+	if (!query) {
+		return {
+			ok: false,
+			error: { code: "MISSING_ARGUMENTS", message: "Expected: /find <query> [limit]" },
+		};
+	}
+
+	return {
+		ok: true,
+		value: {
+			type: "find",
+			query,
+			limit,
+		},
+	};
+}
+
 function parseAnnotateCommand(input: string): ParseTelegramCommandResult {
 	const raw = input.trim();
 	const body = raw.slice("/annotate".length).trim();
@@ -272,6 +315,9 @@ export function parseTelegramCommand(input: string): ParseTelegramCommandResult 
 	if (raw.startsWith("/list")) {
 		return parseListCommand(raw);
 	}
+	if (raw.startsWith("/find")) {
+		return parseFindCommand(raw);
+	}
 	if (raw.startsWith("/annotate")) {
 		return parseAnnotateCommand(raw);
 	}
@@ -282,7 +328,7 @@ export function parseTelegramCommand(input: string): ParseTelegramCommandResult 
 		ok: false,
 		error: {
 			code: "UNSUPPORTED_COMMAND",
-			message: "Only /save, /ask, /list, /annotate, and /ann are supported in MVP.",
+			message: "Only /save, /ask, /list, /find, /annotate, and /ann are supported in MVP.",
 		},
 	};
 }

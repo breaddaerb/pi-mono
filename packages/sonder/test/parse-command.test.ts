@@ -66,6 +66,22 @@ describe("parseTelegramCommand", () => {
 		expect(result.error.code).toBe("MISSING_ARGUMENTS");
 	});
 
+	it("parses /find with default limit", () => {
+		const result = parseTelegramCommand("/find language design");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected find command to parse");
+		expect(result.value).toEqual({ type: "find", query: "language design", limit: 10 });
+	});
+
+	it("parses /find with explicit limit", () => {
+		const result = parseTelegramCommand("/find agent memory 5");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected find command to parse");
+		expect(result.value).toEqual({ type: "find", query: "agent memory", limit: 5 });
+	});
+
 	it("parses /annotate with tags", () => {
 		const result = parseTelegramCommand("/annotate item_123 key idea from section two #thesis #idea");
 

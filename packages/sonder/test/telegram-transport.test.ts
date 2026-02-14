@@ -37,6 +37,56 @@ describe("TelegramBotRunner", () => {
 		tempDirs.length = 0;
 	});
 
+	it("formats /find results", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "stub",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+		app.itemsRepo.create({
+			id: "item_find",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com/agent-language",
+			whyNote: null,
+			tags: ["agents"],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_find",
+			itemId: "item_find",
+			kind: "extracted-text",
+			path: join(root, "missing.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+		app.createAnnotation({
+			itemId: "item_find",
+			type: "note",
+			text: "language design",
+			comment: null,
+			tags: [],
+		});
+
+		const api = new FakeTelegramApi([{ updateId: 1, chatId: 40, text: "/find language" }]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent).toHaveLength(1);
+		expect(api.sent[0].text).toContain("Find results for: language");
+		expect(api.sent[0].text).toContain("item_find");
+		app.close();
+	});
+
 	it("processes command updates and sends formatted response", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);

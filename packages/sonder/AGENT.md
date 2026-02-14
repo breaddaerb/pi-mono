@@ -29,3 +29,10 @@ These rules apply to Sonder implementation work in this repository.
 
 - Prefer complete implementation plans before coding.
 - Surface key decisions early to reduce rework.
+
+## Progress Tracking Discipline
+
+- For every completed feature (especially command-surface features), always update both:
+  - `packages/sonder/TODO.md`
+  - `docs/sonder-implementation-checklist.md`
+- Do this in the same implementation cycle before proposing commit.

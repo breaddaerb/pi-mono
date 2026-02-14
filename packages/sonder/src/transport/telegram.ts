@@ -270,6 +270,17 @@ function formatCommandResult(result: Awaited<ReturnType<SonderApp["processComman
 		return `Recent items (${result.value.items.length})\n\n${lines.join("\n\n")}`;
 	}
 
+	if (result.value.type === "find") {
+		if (result.value.items.length === 0) {
+			return `No items matched: ${result.value.query}`;
+		}
+		const lines = result.value.items.map((item, index) => {
+			const tags = item.tags.length > 0 ? ` ${item.tags.map((tag) => `#${tag}`).join(" ")}` : "";
+			return `${index + 1}. ${item.id} (score ${item.score})\n   ${truncateMiddle(item.originalUrl, 100)}${tags}\n   reasons: ${item.reasons.join(", ")}`;
+		});
+		return `Find results for: ${result.value.query}\n\n${lines.join("\n\n")}`;
+	}
+
 	if (result.value.type === "annotate") {
 		const tags =
 			result.value.annotation.tags.length > 0

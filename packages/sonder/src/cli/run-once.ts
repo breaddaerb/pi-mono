@@ -49,6 +49,7 @@ function usage(): string {
 		"Examples:",
 		"  sonder --root ./.sonder-data /save https://lucumr.pocoo.org/2026/2/9/a-language-for-agents '#agents'",
 		"  sonder --root ./.sonder-data /list [limit]",
+		"  sonder --root ./.sonder-data /find <query> [limit]",
 		'  sonder --root ./.sonder-data /ask <itemId> "what is the thesis?"',
 		'  sonder --root ./.sonder-data /annotate <itemId> "key quote" #thesis',
 		"  sonder --root ./.sonder-data /ann list <itemId>",
