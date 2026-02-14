@@ -210,7 +210,8 @@ type ModeCommand =
 	| { type: "exit" }
 	| { type: "where" }
 	| { type: "sessions"; itemId: string }
-	| { type: "resume"; sessionId: string };
+	| { type: "resume"; sessionId: string }
+	| { type: "history"; sessionId?: string };
 
 function parseModeCommand(text: string): ModeCommand | null {
 	const parts = text
@@ -231,6 +232,9 @@ function parseModeCommand(text: string): ModeCommand | null {
 	}
 	if (parts[0] === "/resume" && parts[1]) {
 		return { type: "resume", sessionId: parts[1] };
+	}
+	if (parts[0] === "/history") {
+		return { type: "history", sessionId: parts[1] };
 	}
 	return null;
 }
@@ -387,7 +391,7 @@ export class TelegramBotRunner {
 				if (!activeMode) {
 					await this.api.sendMessage(
 						chatId,
-						"No active dialogue. Use /open <itemId> to discuss an item, or /open for general chat.",
+						"No active dialogue. Use /open <itemId> to discuss an item, or /open for general chat. Use /history <sessionId> to view past turns.",
 					);
 					return;
 				}
@@ -482,6 +486,49 @@ export class TelegramBotRunner {
 			}
 			const lines = sessions.map((session, index) => `${index + 1}. ${session.sessionId} (${session.createdAt})`);
 			await this.api.sendMessage(chatId, `Sessions for ${command.itemId}\n\n${lines.join("\n")}`);
+			return;
+		}
+
+		if (command.type === "history") {
+			if (command.sessionId) {
+				const turns = this.app.listDialogueHistory(command.sessionId, 20);
+				if (turns.length === 0) {
+					await this.api.sendMessage(chatId, `No turns in session ${command.sessionId}.`);
+					return;
+				}
+				const lines = turns.map((turn) => `${turn.role}: ${truncateMiddle(turn.content, 280)}`);
+				for (const chunk of splitForTelegram(`History for ${command.sessionId}\n\n${lines.join("\n\n")}`)) {
+					await this.api.sendMessage(chatId, chunk);
+				}
+				return;
+			}
+
+			const mode = this.getChatMode(chatId);
+			if (!mode) {
+				await this.api.sendMessage(chatId, "No active dialogue mode and no sessionId provided.");
+				return;
+			}
+			if (mode.mode === "general") {
+				if (mode.history.length === 0) {
+					await this.api.sendMessage(chatId, `General history is empty for session ${mode.sessionId}.`);
+					return;
+				}
+				const lines = mode.history.map((turn) => `${turn.role}: ${truncateMiddle(turn.content, 280)}`);
+				for (const chunk of splitForTelegram(`History for ${mode.sessionId}\n\n${lines.join("\n\n")}`)) {
+					await this.api.sendMessage(chatId, chunk);
+				}
+				return;
+			}
+
+			const turns = this.app.listDialogueHistory(mode.sessionId, 20);
+			if (turns.length === 0) {
+				await this.api.sendMessage(chatId, `No turns in session ${mode.sessionId}.`);
+				return;
+			}
+			const lines = turns.map((turn) => `${turn.role}: ${truncateMiddle(turn.content, 280)}`);
+			for (const chunk of splitForTelegram(`History for ${mode.sessionId}\n\n${lines.join("\n\n")}`)) {
+				await this.api.sendMessage(chatId, chunk);
+			}
 			return;
 		}
 

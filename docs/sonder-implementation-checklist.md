@@ -30,7 +30,7 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 
 - [x] Implement Telegram adapter (`transport/telegram.ts`)
 - [ ] Add per-chat queue (mom-style)
-- [ ] Add command router for `/save`, `/find`, `/open`, `/ask`, `/exit`, `/where`, `/sessions`, `/resume`
+- [ ] Add command router for `/save`, `/find`, `/open`, `/ask`, `/exit`, `/where`, `/sessions`, `/resume`, `/history`
 - [x] Implement command contract for MVP:
   - [x] `/save <url> [#tags...]`
   - [x] `/ask <itemId> <question>`
@@ -86,6 +86,7 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 - [x] Route non-command messages to active dialogue turns
 - [x] Add `/exit` and `/where` for mode control
 - [x] Add `/sessions <itemId>` and `/resume <sessionId>`
+- [x] Add `/history [sessionId]` to inspect recent turns
 - [x] Keep `/ask <itemId> <question>` as stateless fallback
 
 ## 7) Retrieval (`/find`, `/open`)

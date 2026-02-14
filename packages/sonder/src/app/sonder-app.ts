@@ -34,6 +34,14 @@ export interface SonderGeneralChatResult {
 	citations: string[];
 }
 
+export interface SonderDialogueTurnItem {
+	id: string;
+	sessionId: string;
+	role: "user" | "assistant" | "system";
+	content: string;
+	createdAt: string;
+}
+
 export interface SonderAppPaths {
 	rootDir: string;
 	databasePath?: string;
@@ -157,6 +165,22 @@ export class SonderApp {
 			sessionId: session.id,
 			createdAt: session.createdAt,
 			title: session.title,
+		}));
+	}
+
+	listDialogueHistory(sessionId: string, limit = 20): SonderDialogueTurnItem[] {
+		const session = this.dialogueRepo.findSessionById(sessionId);
+		if (!session) {
+			throw new Error(`Session not found: ${sessionId}`);
+		}
+		const turns = this.dialogueRepo.listTurnsBySessionId(sessionId);
+		const start = Math.max(0, turns.length - Math.max(1, Math.floor(limit)));
+		return turns.slice(start).map((turn) => ({
+			id: turn.id,
+			sessionId: turn.sessionId,
+			role: turn.role,
+			content: turn.content,
+			createdAt: turn.createdAt,
 		}));
 	}
 

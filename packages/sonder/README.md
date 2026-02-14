@@ -138,6 +138,7 @@ Dialogue usage in Telegram:
 /exit               # leave active mode
 /sessions <itemId>  # list sessions for item
 /resume <sessionId> # resume item session
+/history [sessionId] # show recent turns (active or explicit session)
 ```
 
 Active dialogue mode is persisted per chat in SQLite, so mode/session can survive process restart.
@@ -147,6 +148,7 @@ Session resume flow example:
 ```text
 /sessions <itemId>
 /resume <sessionId>
+/history
 /where
 ```
 
