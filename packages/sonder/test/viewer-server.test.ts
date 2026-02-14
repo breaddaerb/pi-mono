@@ -74,6 +74,8 @@ describe("viewer server", () => {
 			expect(page).toContain("focusAnnotation");
 			expect(page).toContain("annotation-active");
 			expect(page).toContain("annotation-topline");
+			expect(page).toContain("annotation-status");
+			expect(page).toContain("sonder-overlay-status");
 			expect(page).toContain('class="side-top"');
 			expect(page).toContain('class="ann-scroll"');
 

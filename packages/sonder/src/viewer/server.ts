@@ -134,6 +134,12 @@ function renderViewerPage(itemId: string): string {
       .annotation-topline { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
       .annotation-type { font-size: 11px; color: #2f4163; font-weight: 700; letter-spacing: .02em; background: #eaf2ff; border: 1px solid #d1e3ff; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; }
       .annotation-id { font-size: 11px; color: #8a93a6; }
+      .annotation-status { font-size: 10px; border-radius: 999px; padding: 2px 8px; border: 1px solid transparent; margin-left: 8px; }
+      .annotation-status-anchor { background: #edf9f0; border-color: #cfead7; color: #2f7450; }
+      .annotation-status-fallback { background: #fff8e8; border-color: #f3dfb2; color: #7b5c1e; }
+      .annotation-status-unresolved { background: #fff0f0; border-color: #f2c8c8; color: #8a2e2e; }
+      .annotation-status-pending { background: #f3f5f9; border-color: #e2e7f0; color: #59627a; }
+      .annotation-unresolved { border-color: #f2c8c8; }
       .annotation-text { white-space: pre-wrap; word-break: break-word; margin-top: 8px; font-size: 13px; line-height: 1.45; }
       .annotation-comment { font-size: 12px; line-height: 1.45; margin-top: 8px; background: #f6f8fd; border: 1px solid #e1e7f5; padding: 8px; border-radius: 8px; color: #37425a; }
       .annotation-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -168,6 +174,7 @@ function renderViewerPage(itemId: string): string {
       const annRoot = document.getElementById('ann');
       const iframe = document.getElementById('snapshot');
       let annotationsCache = [];
+      let overlayStatuses = {};
 
       function toCssPath(element) {
         if (!element || element.nodeType !== Node.ELEMENT_NODE) {
@@ -268,6 +275,22 @@ function renderViewerPage(itemId: string): string {
         }
       }
 
+      function statusMeta(rawStatus) {
+        if (typeof rawStatus !== 'string') {
+          return { label: 'pending', className: 'annotation-status-pending', unresolved: false };
+        }
+        if (rawStatus === 'resolved-anchor') {
+          return { label: 'anchor', className: 'annotation-status-anchor', unresolved: false };
+        }
+        if (rawStatus === 'resolved-fallback') {
+          return { label: 'fallback', className: 'annotation-status-fallback', unresolved: false };
+        }
+        if (rawStatus.startsWith('unresolved')) {
+          return { label: rawStatus, className: 'annotation-status-unresolved', unresolved: true };
+        }
+        return { label: rawStatus, className: 'annotation-status-pending', unresolved: false };
+      }
+
       async function loadAnnotations() {
         const response = await fetch('/viewer/api/items/' + encodeURIComponent(itemId) + '/annotations');
         const data = await response.json();
@@ -299,6 +322,16 @@ function renderViewerPage(itemId: string): string {
           id.textContent = annotation.id;
           topLine.appendChild(id);
 
+          const status = document.createElement('span');
+          const meta = statusMeta(overlayStatuses[annotation.id]);
+          status.className = 'annotation-status ' + meta.className;
+          status.textContent = meta.label;
+          topLine.appendChild(status);
+
+          if (meta.unresolved) {
+            wrapper.classList.add('annotation-unresolved');
+          }
+
           wrapper.appendChild(topLine);
 
           const text = document.createElement('div');
@@ -325,10 +358,10 @@ function renderViewerPage(itemId: string): string {
             wrapper.appendChild(tags);
           }
 
-          const meta = document.createElement('div');
-          meta.className = 'annotation-meta';
-          meta.textContent = annotation.createdAt;
-          wrapper.appendChild(meta);
+          const metaLine = document.createElement('div');
+          metaLine.className = 'annotation-meta';
+          metaLine.textContent = annotation.createdAt;
+          wrapper.appendChild(metaLine);
 
           const actions = document.createElement('div');
           actions.className = 'annotation-actions';
@@ -495,6 +528,21 @@ function renderViewerPage(itemId: string): string {
       document.getElementById('btnHighlight').onclick = () => createAnnotation('highlight');
       document.getElementById('btnUnderline').onclick = () => createAnnotation('underline');
       document.getElementById('btnNote').onclick = () => createAnnotation('note');
+
+      window.addEventListener('message', (event) => {
+        const data = event && event.data;
+        if (!data || typeof data !== 'object') {
+          return;
+        }
+        if (data.type !== 'sonder-overlay-status' || data.itemId !== itemId || typeof data.statuses !== 'object') {
+          return;
+        }
+        overlayStatuses = data.statuses;
+        loadAnnotations().catch((error) => {
+          annRoot.textContent = String(error);
+        });
+      });
+
       loadAnnotations().catch((error) => {
         annRoot.textContent = String(error);
       });
@@ -695,16 +743,19 @@ function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
   function applyMark(annotation) {
     const text = (annotation.text || '').trim();
     if (!text) {
-      return;
+      return 'unresolved-empty';
     }
     const anchor = parseAnchor(annotation);
 
+    let strategy = 'resolved-anchor';
     let range = getTextRangeFromSelector(anchor, text);
     if (!range) {
       range = findRangeAcrossTextNodes(document.body, text);
+      strategy = 'resolved-fallback';
     }
     if (!range && anchor && typeof anchor.exact === 'string') {
       range = findRangeAcrossTextNodes(document.body, anchor.exact);
+      strategy = 'resolved-fallback';
     }
     if (!range) {
       const hit = findFirstTextNodeWithValue(document.body, text);
@@ -712,10 +763,11 @@ function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
         range = document.createRange();
         range.setStart(hit.node, hit.index);
         range.setEnd(hit.node, hit.index + text.length);
+        strategy = 'resolved-fallback';
       }
     }
     if (!range) {
-      return;
+      return 'unresolved-missing-target';
     }
 
     const span = document.createElement('span');
@@ -730,8 +782,10 @@ function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
       const fragment = range.extractContents();
       span.appendChild(fragment);
       range.insertNode(span);
+      return strategy;
     } catch {
       // Ignore invalid range overlaps in MVP overlay pass.
+      return 'unresolved-range-overlap';
     }
   }
 
@@ -739,8 +793,13 @@ function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
     .then((res) => res.json())
     .then((payload) => {
       const annotations = Array.isArray(payload.annotations) ? payload.annotations : [];
+      const statuses = {};
       for (const annotation of annotations) {
-        applyMark(annotation);
+        statuses[annotation.id] = applyMark(annotation);
+      }
+      window.__sonderOverlayStatus = statuses;
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'sonder-overlay-status', itemId: ${JSON.stringify(itemId)}, statuses }, '*');
       }
     })
     .catch(() => {});
