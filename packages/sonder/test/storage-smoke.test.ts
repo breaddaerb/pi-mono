@@ -97,6 +97,8 @@ describe("storage smoke", () => {
 		expect(artifactsRepo.listByItemId(item.id)).toEqual([artifact]);
 		expect(annotationsRepo.findById(annotation.id)).toEqual(annotation);
 		expect(annotationsRepo.listByItemId(item.id)).toEqual([annotation]);
+		expect(annotationsRepo.deleteById(annotation.id)).toBe(true);
+		expect(annotationsRepo.findById(annotation.id)).toBeNull();
 		expect(dialogueRepo.findSessionById(session.id)).toEqual(session);
 		expect(dialogueRepo.listSessionsByItemId(item.id)).toEqual([session]);
 		expect(dialogueRepo.findTurnById(turn.id)).toEqual(turn);

@@ -20,6 +20,7 @@ export class AnnotationsRepo {
 	private readonly insertStatement;
 	private readonly selectByIdStatement;
 	private readonly selectByItemIdStatement;
+	private readonly deleteByIdStatement;
 
 	constructor(private readonly database: DatabaseSync) {
 		this.insertStatement = this.database.prepare(`
@@ -30,6 +31,7 @@ export class AnnotationsRepo {
 		this.selectByItemIdStatement = this.database.prepare(
 			"SELECT * FROM annotations WHERE item_id = ? ORDER BY created_at ASC",
 		);
+		this.deleteByIdStatement = this.database.prepare("DELETE FROM annotations WHERE id = ?");
 	}
 
 	create(annotation: Annotation): void {
@@ -59,6 +61,11 @@ export class AnnotationsRepo {
 	listByItemId(itemId: string): Annotation[] {
 		const rows = this.selectByItemIdStatement.all(itemId);
 		return rows.map((row) => mapAnnotationRow(row as unknown as AnnotationRow));
+	}
+
+	deleteById(id: string): boolean {
+		const result = this.deleteByIdStatement.run(id);
+		return result.changes > 0;
 	}
 }
 

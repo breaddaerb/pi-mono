@@ -8,6 +8,7 @@ Sonder is a Telegram-first conversational personal knowledge system built on pi-
 - Save contract: `/save <url> [#tags...]`
 - Ask contract: `/ask <itemId> <question>`
 - List contract: `/list [limit]`
+- Annotation contracts: `/annotate <itemId> <text> [#tags...]`, `/ann list <itemId>`, `/ann del <annotationId>`
 - Snapshot outputs: `snapshot.html + assets`, extracted text, screenshot fallback
 - Annotation types: `highlight`, `underline`, `note`
 - Ask behavior: inline evidence refs in responses by default
@@ -74,6 +75,24 @@ Ask an item (replace `ITEM_ID` with a real ID):
 
 ```bash
 node dist/main.js --root ./.sonder-data /ask ITEM_ID "what is the main thesis?"
+```
+
+Add an annotation note:
+
+```bash
+node dist/main.js --root ./.sonder-data /annotate ITEM_ID "key claim in this article" "#thesis"
+```
+
+List annotations:
+
+```bash
+node dist/main.js --root ./.sonder-data /ann list ITEM_ID
+```
+
+Delete an annotation:
+
+```bash
+node dist/main.js --root ./.sonder-data /ann del ANNOTATION_ID
 ```
 
 Responder modes:

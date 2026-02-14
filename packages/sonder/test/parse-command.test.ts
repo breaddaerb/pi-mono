@@ -66,6 +66,43 @@ describe("parseTelegramCommand", () => {
 		expect(result.error.code).toBe("MISSING_ARGUMENTS");
 	});
 
+	it("parses /annotate with tags", () => {
+		const result = parseTelegramCommand("/annotate item_123 key idea from section two #thesis #idea");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected annotate command to parse");
+		expect(result.value).toEqual({
+			type: "annotate",
+			itemId: "item_123",
+			text: "key idea from section two",
+			tags: ["thesis", "idea"],
+		});
+	});
+
+	it("parses /ann list", () => {
+		const result = parseTelegramCommand("/ann list item_123");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected ann list command to parse");
+		expect(result.value).toEqual({ type: "ann-list", itemId: "item_123" });
+	});
+
+	it("parses /ann del", () => {
+		const result = parseTelegramCommand("/ann del ann_123");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected ann del command to parse");
+		expect(result.value).toEqual({ type: "ann-del", annotationId: "ann_123" });
+	});
+
+	it("rejects invalid /ann action", () => {
+		const result = parseTelegramCommand("/ann tag ann_123 #foo");
+
+		expect(result.ok).toBe(false);
+		if (result.ok) throw new Error("Expected ann command to fail");
+		expect(result.error.code).toBe("UNSUPPORTED_COMMAND");
+	});
+
 	it("rejects unsupported commands", () => {
 		const result = parseTelegramCommand("/open item_123");
 

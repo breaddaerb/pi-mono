@@ -60,7 +60,7 @@ describe("SonderApp", () => {
 		const app = new SonderApp({
 			paths: { rootDir: root },
 			responder: async (_input) => ({
-				answer: `Thesis: optimize for local reasoning. [ann:seed] [art:primary]`,
+				answer: "Thesis: optimize for local reasoning. [ann:seed] [art:primary]",
 				model: "gpt-5",
 				provider: "openai-codex",
 				citations: ["ann:seed", "art:primary"],
@@ -130,6 +130,131 @@ describe("SonderApp", () => {
 		} finally {
 			app.close();
 			await server.close();
+		}
+	});
+
+	it("creates lists and deletes annotations via commands", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		let lastPrompt = "";
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => {
+				lastPrompt = input.prompt;
+				return {
+					answer: "ok",
+					model: "gpt-5",
+					provider: "openai-codex",
+					citations: [],
+				};
+			},
+		});
+
+		app.itemsRepo.create({
+			id: "item_anno",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_text",
+			itemId: "item_anno",
+			kind: "extracted-text",
+			path: join(root, "missing.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
+		try {
+			const annotateResult = await app.processCommand("/annotate item_anno A durable claim #thesis");
+			expect(annotateResult.ok).toBe(true);
+			if (!annotateResult.ok || annotateResult.value.type !== "annotate") {
+				throw new Error("Expected annotate result");
+			}
+			expect(annotateResult.value.annotation.type).toBe("note");
+			expect(annotateResult.value.annotation.tags).toEqual(["thesis"]);
+			expect(annotateResult.value.annotation.artifactId).toBe("art_text");
+
+			const listResult = await app.processCommand("/ann list item_anno");
+			expect(listResult.ok).toBe(true);
+			if (!listResult.ok || listResult.value.type !== "ann-list") {
+				throw new Error("Expected ann-list result");
+			}
+			expect(listResult.value.annotations).toHaveLength(1);
+
+			const askResult = await app.processCommand("/ask item_anno what matters?");
+			expect(askResult.ok).toBe(true);
+			expect(lastPrompt).toContain("A durable claim");
+
+			const deleteResult = await app.processCommand(`/ann del ${annotateResult.value.annotation.id}`);
+			expect(deleteResult.ok).toBe(true);
+			if (!deleteResult.ok || deleteResult.value.type !== "ann-del") {
+				throw new Error("Expected ann-del result");
+			}
+
+			const listAfterDelete = await app.processCommand("/ann list item_anno");
+			expect(listAfterDelete.ok).toBe(true);
+			if (!listAfterDelete.ok || listAfterDelete.value.type !== "ann-list") {
+				throw new Error("Expected ann-list result");
+			}
+			expect(listAfterDelete.value.annotations).toHaveLength(0);
+		} finally {
+			app.close();
+		}
+	});
+
+	it("opens lists and resumes item dialogue sessions", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `A:${input.question}`,
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+		});
+
+		app.itemsRepo.create({
+			id: "item_dialogue",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_dialogue",
+			itemId: "item_dialogue",
+			kind: "extracted-text",
+			path: join(root, "missing.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
+		try {
+			const opened = app.openItemDialogue("item_dialogue");
+			expect(opened.itemId).toBe("item_dialogue");
+
+			const asked = await app.askInItemDialogue("item_dialogue", opened.sessionId, "hello");
+			expect(asked.answer).toContain("A:hello");
+
+			const sessions = app.listItemDialogues("item_dialogue");
+			expect(sessions.length).toBeGreaterThan(0);
+
+			const resumed = app.resumeItemDialogue(opened.sessionId);
+			expect(resumed.sessionId).toBe(opened.sessionId);
+		} finally {
+			app.close();
 		}
 	});
 

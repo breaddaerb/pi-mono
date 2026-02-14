@@ -1,4 +1,10 @@
-export type ParsedTelegramCommand = ParsedSaveCommand | ParsedAskCommand | ParsedListCommand;
+export type ParsedTelegramCommand =
+	| ParsedSaveCommand
+	| ParsedAskCommand
+	| ParsedListCommand
+	| ParsedAnnotateCommand
+	| ParsedAnnotationListCommand
+	| ParsedAnnotationDeleteCommand;
 
 export interface ParsedSaveCommand {
 	type: "save";
@@ -15,6 +21,23 @@ export interface ParsedAskCommand {
 export interface ParsedListCommand {
 	type: "list";
 	limit: number;
+}
+
+export interface ParsedAnnotateCommand {
+	type: "annotate";
+	itemId: string;
+	text: string;
+	tags: string[];
+}
+
+export interface ParsedAnnotationListCommand {
+	type: "ann-list";
+	itemId: string;
+}
+
+export interface ParsedAnnotationDeleteCommand {
+	type: "ann-del";
+	annotationId: string;
 }
 
 export interface ParseTelegramCommandError {
@@ -140,6 +163,104 @@ function parseListCommand(input: string): ParseTelegramCommandResult {
 	};
 }
 
+function parseAnnotateCommand(input: string): ParseTelegramCommandResult {
+	const raw = input.trim();
+	const body = raw.slice("/annotate".length).trim();
+	if (!body) {
+		return {
+			ok: false,
+			error: { code: "MISSING_ARGUMENTS", message: "Expected: /annotate <itemId> <text> [#tags...]" },
+		};
+	}
+
+	const segments = body.split(/\s+/).filter((segment) => segment.length > 0);
+	if (segments.length < 2) {
+		return {
+			ok: false,
+			error: { code: "MISSING_ARGUMENTS", message: "Expected: /annotate <itemId> <text> [#tags...]" },
+		};
+	}
+
+	const itemId = segments[0];
+	const tags: string[] = [];
+	const textTokens: string[] = [];
+	for (const token of segments.slice(1)) {
+		if (token.startsWith("#") && token.length > 1) {
+			tags.push(token.slice(1));
+			continue;
+		}
+		textTokens.push(token);
+	}
+
+	const text = textTokens.join(" ").trim();
+	if (!itemId || !text) {
+		return {
+			ok: false,
+			error: { code: "MISSING_ARGUMENTS", message: "Expected: /annotate <itemId> <text> [#tags...]" },
+		};
+	}
+
+	return {
+		ok: true,
+		value: {
+			type: "annotate",
+			itemId,
+			text,
+			tags,
+		},
+	};
+}
+
+function parseAnnotationCommand(input: string): ParseTelegramCommandResult {
+	const raw = input.trim();
+	const body = raw.slice("/ann".length).trim();
+	if (!body) {
+		return {
+			ok: false,
+			error: { code: "MISSING_ARGUMENTS", message: "Expected: /ann list <itemId> | /ann del <annotationId>" },
+		};
+	}
+
+	const segments = body.split(/\s+/).filter((segment) => segment.length > 0);
+	const action = segments[0];
+	if (action === "list") {
+		if (segments.length !== 2) {
+			return {
+				ok: false,
+				error: { code: "MISSING_ARGUMENTS", message: "Expected: /ann list <itemId>" },
+			};
+		}
+		return {
+			ok: true,
+			value: {
+				type: "ann-list",
+				itemId: segments[1],
+			},
+		};
+	}
+
+	if (action === "del") {
+		if (segments.length !== 2) {
+			return {
+				ok: false,
+				error: { code: "MISSING_ARGUMENTS", message: "Expected: /ann del <annotationId>" },
+			};
+		}
+		return {
+			ok: true,
+			value: {
+				type: "ann-del",
+				annotationId: segments[1],
+			},
+		};
+	}
+
+	return {
+		ok: false,
+		error: { code: "UNSUPPORTED_COMMAND", message: "Supported: /ann list <itemId>, /ann del <annotationId>" },
+	};
+}
+
 export function parseTelegramCommand(input: string): ParseTelegramCommandResult {
 	const raw = input.trim();
 	if (raw.startsWith("/save")) {
@@ -151,11 +272,17 @@ export function parseTelegramCommand(input: string): ParseTelegramCommandResult 
 	if (raw.startsWith("/list")) {
 		return parseListCommand(raw);
 	}
+	if (raw.startsWith("/annotate")) {
+		return parseAnnotateCommand(raw);
+	}
+	if (raw.startsWith("/ann")) {
+		return parseAnnotationCommand(raw);
+	}
 	return {
 		ok: false,
 		error: {
 			code: "UNSUPPORTED_COMMAND",
-			message: "Only /save, /ask, and /list are supported in MVP.",
+			message: "Only /save, /ask, /list, /annotate, and /ann are supported in MVP.",
 		},
 	};
 }

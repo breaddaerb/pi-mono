@@ -41,6 +41,11 @@ export interface AskResult {
 	citations: string[];
 }
 
+export interface EnsureSessionResult {
+	sessionId: string;
+	created: boolean;
+}
+
 function ensureInlineReferences(answer: string, citations: string[]): string {
 	if (citations.length === 0) {
 		return answer;
@@ -66,12 +71,16 @@ export class AskService {
 	}
 
 	async ask(itemId: string, question: string): Promise<AskResult> {
+		return this.askInSession(itemId, question);
+	}
+
+	async askInSession(itemId: string, question: string, sessionId?: string): Promise<AskResult> {
 		const item = this.dependencies.itemsRepo.findById(itemId);
 		if (!item) {
 			throw new Error(`Item not found: ${itemId}`);
 		}
 
-		const session = this.getOrCreateSession(itemId);
+		const { session } = this.getOrCreateSession(itemId, sessionId);
 		const priorTurns = this.dependencies.dialogueRepo.listTurnsBySessionId(session.id);
 		const annotations = this.dependencies.annotationsRepo.listByItemId(itemId);
 		const artifacts = this.dependencies.artifactsRepo.listByItemId(itemId);
@@ -128,10 +137,29 @@ export class AskService {
 		};
 	}
 
-	private getOrCreateSession(itemId: string): DialogueSession {
+	ensureSession(itemId: string, preferredSessionId?: string): EnsureSessionResult {
+		const { session, created } = this.getOrCreateSession(itemId, preferredSessionId);
+		return { sessionId: session.id, created };
+	}
+
+	private getOrCreateSession(
+		itemId: string,
+		preferredSessionId?: string,
+	): { session: DialogueSession; created: boolean } {
+		if (preferredSessionId) {
+			const preferred = this.dependencies.dialogueRepo.findSessionById(preferredSessionId);
+			if (!preferred) {
+				throw new Error(`Session not found: ${preferredSessionId}`);
+			}
+			if (preferred.itemId !== itemId) {
+				throw new Error(`Session ${preferredSessionId} does not belong to item ${itemId}`);
+			}
+			return { session: preferred, created: false };
+		}
+
 		const existing = this.dependencies.dialogueRepo.listSessionsByItemId(itemId)[0];
 		if (existing) {
-			return existing;
+			return { session: existing, created: false };
 		}
 
 		const session: DialogueSession = {
@@ -141,7 +169,7 @@ export class AskService {
 			createdAt: this.now().toISOString(),
 		};
 		this.dependencies.dialogueRepo.createSession(session);
-		return session;
+		return { session, created: true };
 	}
 
 	private createTurn(input: Omit<DialogueTurn, "id" | "createdAt">): DialogueTurn {

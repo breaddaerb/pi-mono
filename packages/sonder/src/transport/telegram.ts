@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Writable } from "node:stream";
 import { type Dispatcher, ProxyAgent, fetch as undiciFetch } from "undici";
 import type { SonderApp } from "../app/index.js";
@@ -188,6 +189,50 @@ function splitForTelegram(text: string): string[] {
 	return chunks;
 }
 
+interface ChatModeStateItem {
+	mode: "item";
+	itemId: string;
+	sessionId: string;
+}
+
+interface ChatModeStateGeneral {
+	mode: "general";
+	sessionId: string;
+	history: Array<{ role: "user" | "assistant"; content: string }>;
+}
+
+type ChatModeState = ChatModeStateItem | ChatModeStateGeneral;
+
+type ModeCommand =
+	| { type: "open"; itemId?: string }
+	| { type: "exit" }
+	| { type: "where" }
+	| { type: "sessions"; itemId: string }
+	| { type: "resume"; sessionId: string };
+
+function parseModeCommand(text: string): ModeCommand | null {
+	const parts = text
+		.trim()
+		.split(/\s+/)
+		.filter((part) => part.length > 0);
+	if (parts[0] === "/open") {
+		return { type: "open", itemId: parts[1] };
+	}
+	if (parts[0] === "/exit") {
+		return { type: "exit" };
+	}
+	if (parts[0] === "/where") {
+		return { type: "where" };
+	}
+	if (parts[0] === "/sessions" && parts[1]) {
+		return { type: "sessions", itemId: parts[1] };
+	}
+	if (parts[0] === "/resume" && parts[1]) {
+		return { type: "resume", sessionId: parts[1] };
+	}
+	return null;
+}
+
 function formatCommandResult(result: Awaited<ReturnType<SonderApp["processCommand"]>>): string {
 	if (!result.ok) {
 		return `Error (${result.error.code}): ${result.error.message}`;
@@ -219,6 +264,30 @@ function formatCommandResult(result: Awaited<ReturnType<SonderApp["processComman
 		return `Recent items (${result.value.items.length})\n\n${lines.join("\n\n")}`;
 	}
 
+	if (result.value.type === "annotate") {
+		const tags =
+			result.value.annotation.tags.length > 0
+				? `\nTags: ${result.value.annotation.tags.map((tag) => `#${tag}`).join(" ")}`
+				: "";
+		return `Annotation saved\nID: ${result.value.annotation.id}\nItem: ${result.value.annotation.itemId}\nText: ${result.value.annotation.text ?? ""}${tags}`;
+	}
+
+	if (result.value.type === "ann-list") {
+		if (result.value.annotations.length === 0) {
+			return `No annotations for item ${result.value.itemId}.`;
+		}
+		const lines = result.value.annotations.map((annotation, index) => {
+			const tags = annotation.tags.length > 0 ? ` ${annotation.tags.map((tag) => `#${tag}`).join(" ")}` : "";
+			const preview = truncateMiddle(annotation.text ?? "(empty)", 120);
+			return `${index + 1}. ${annotation.id}\n   ${preview}${tags}`;
+		});
+		return `Annotations for ${result.value.itemId} (${result.value.annotations.length})\n\n${lines.join("\n\n")}`;
+	}
+
+	if (result.value.type === "ann-del") {
+		return `Annotation deleted\nID: ${result.value.annotationId}`;
+	}
+
 	const citations = result.value.citations.length > 0 ? `\n\nCitations: ${result.value.citations.join(" ")}` : "";
 	return `Answer for ${result.value.itemId}\n\n${result.value.answer}${citations}`;
 }
@@ -228,6 +297,7 @@ export class TelegramBotRunner {
 	private readonly longPollSeconds: number;
 	private readonly idleDelayMs: number;
 	private readonly stderr: Writable;
+	private readonly chatModes = new Map<number, ChatModeState>();
 
 	constructor(
 		private readonly api: TelegramApi,
@@ -259,16 +329,124 @@ export class TelegramBotRunner {
 	}
 
 	private async handleMessage(chatId: number, text: string): Promise<void> {
-		if (!text.startsWith("/")) {
-			await this.api.sendMessage(chatId, "Send one of: /save <url>, /list, /ask <itemId> <question>");
+		try {
+			const modeCommand = parseModeCommand(text);
+			if (modeCommand) {
+				await this.handleModeCommand(chatId, modeCommand);
+				return;
+			}
+
+			if (!text.startsWith("/")) {
+				const activeMode = this.chatModes.get(chatId);
+				if (!activeMode) {
+					await this.api.sendMessage(
+						chatId,
+						"No active dialogue. Use /open <itemId> to discuss an item, or /open for general chat.",
+					);
+					return;
+				}
+
+				if (activeMode.mode === "item") {
+					const askResult = await this.app.askInItemDialogue(activeMode.itemId, activeMode.sessionId, text);
+					for (const chunk of splitForTelegram(`Answer for ${askResult.itemId}\n\n${askResult.answer}`)) {
+						await this.api.sendMessage(chatId, chunk);
+					}
+					return;
+				}
+
+				const response = await this.app.chatWithoutItem(activeMode.sessionId, text, activeMode.history);
+				activeMode.history.push({ role: "user", content: text });
+				activeMode.history.push({ role: "assistant", content: response.answer });
+				for (const chunk of splitForTelegram(response.answer)) {
+					await this.api.sendMessage(chatId, chunk);
+				}
+				return;
+			}
+
+			const result = await this.app.processCommand(text);
+			const responseText = formatCommandResult(result);
+			for (const chunk of splitForTelegram(responseText)) {
+				await this.api.sendMessage(chatId, chunk);
+			}
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			await this.api.sendMessage(chatId, `Error (RUNTIME_ERROR): ${message}`);
+		}
+	}
+
+	private async handleModeCommand(chatId: number, command: ModeCommand): Promise<void> {
+		if (command.type === "open") {
+			if (!command.itemId) {
+				const sessionId = randomUUID();
+				this.chatModes.set(chatId, {
+					mode: "general",
+					sessionId,
+					history: [],
+				});
+				await this.api.sendMessage(
+					chatId,
+					`Opened general dialogue mode. Session: ${sessionId}. Send messages directly, /exit to leave.`,
+				);
+				return;
+			}
+
+			const opened = this.app.openItemDialogue(command.itemId);
+			this.chatModes.set(chatId, {
+				mode: "item",
+				itemId: opened.itemId,
+				sessionId: opened.sessionId,
+			});
+			await this.api.sendMessage(
+				chatId,
+				`Opened item dialogue\nItem: ${opened.itemId}\nSession: ${opened.sessionId}\nSend messages directly. /exit to leave.`,
+			);
 			return;
 		}
 
-		const result = await this.app.processCommand(text);
-		const responseText = formatCommandResult(result);
-		for (const chunk of splitForTelegram(responseText)) {
-			await this.api.sendMessage(chatId, chunk);
+		if (command.type === "exit") {
+			const existed = this.chatModes.delete(chatId);
+			await this.api.sendMessage(chatId, existed ? "Exited active dialogue mode." : "No active dialogue mode.");
+			return;
 		}
+
+		if (command.type === "where") {
+			const mode = this.chatModes.get(chatId);
+			if (!mode) {
+				await this.api.sendMessage(chatId, "No active dialogue mode.");
+				return;
+			}
+			if (mode.mode === "item") {
+				await this.api.sendMessage(
+					chatId,
+					`Active item dialogue\nItem: ${mode.itemId}\nSession: ${mode.sessionId}`,
+				);
+				return;
+			}
+			await this.api.sendMessage(chatId, `Active general dialogue\nSession: ${mode.sessionId}`);
+			return;
+		}
+
+		if (command.type === "sessions") {
+			const sessions = this.app.listItemDialogues(command.itemId);
+			if (sessions.length === 0) {
+				await this.api.sendMessage(chatId, `No sessions for item ${command.itemId}.`);
+				return;
+			}
+			const lines = sessions.map((session, index) => `${index + 1}. ${session.sessionId} (${session.createdAt})`);
+			await this.api.sendMessage(chatId, `Sessions for ${command.itemId}\n\n${lines.join("\n")}`);
+			return;
+		}
+
+		const resumed = this.app.resumeItemDialogue(command.sessionId);
+		this.chatModes.set(chatId, {
+			mode: "item",
+			itemId: resumed.itemId,
+			sessionId: resumed.sessionId,
+		});
+		await this.api.sendMessage(
+			chatId,
+			`Resumed item dialogue\nItem: ${resumed.itemId}\nSession: ${resumed.sessionId}`,
+		);
 	}
 }
 

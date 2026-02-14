@@ -61,6 +61,84 @@ describe("TelegramBotRunner", () => {
 		app.close();
 	});
 
+	it("supports general dialogue mode via /open without item id", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `General: ${input.question}`,
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, chatId: 8, text: "/open" },
+			{ updateId: 2, chatId: 8, text: "hello there" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent).toHaveLength(2);
+		expect(api.sent[0].text).toContain("Opened general dialogue mode");
+		expect(api.sent[1].text).toContain("General: hello there");
+		app.close();
+	});
+
+	it("supports item dialogue mode via /open <itemId>", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `Item answer: ${input.question}`,
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		app.itemsRepo.create({
+			id: "item_open",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_text",
+			itemId: "item_open",
+			kind: "extracted-text",
+			path: join(root, "missing.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, chatId: 9, text: "/open item_open" },
+			{ updateId: 2, chatId: 9, text: "what is key" },
+			{ updateId: 3, chatId: 9, text: "/where" },
+			{ updateId: 4, chatId: 9, text: "/exit" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent).toHaveLength(4);
+		expect(api.sent[0].text).toContain("Opened item dialogue");
+		expect(api.sent[1].text).toContain("Item answer: what is key");
+		expect(api.sent[2].text).toContain("Active item dialogue");
+		expect(api.sent[3].text).toContain("Exited active dialogue mode");
+		app.close();
+	});
+
 	it("splits long ask responses into multiple telegram messages", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);
@@ -95,7 +173,7 @@ describe("TelegramBotRunner", () => {
 		app.close();
 	});
 
-	it("replies with guidance for non-command text", async () => {
+	it("replies with guidance for non-command text without active mode", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);
 
@@ -114,7 +192,7 @@ describe("TelegramBotRunner", () => {
 		await runner.pollOnce();
 
 		expect(api.sent).toHaveLength(1);
-		expect(api.sent[0].text).toContain("Send one of: /save <url>, /list, /ask");
+		expect(api.sent[0].text).toContain("No active dialogue");
 		app.close();
 	});
 });
