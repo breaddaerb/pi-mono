@@ -142,23 +142,25 @@ Priority order:
 
 - [x] Add Telegram inline keyboard callback routing contract (`sx:v1:<action>:<menuId>:<arg>`)
 - [x] Add ephemeral menu state per chat for index -> internal ID/session mapping
-- [x] Redesign `/find <query>` reply to index list + `Open/Ask` buttons (no ID exposure)
+- [x] Redesign `/find <query>` reply to index list + `Open` buttons (no ID exposure)
 - [x] Add stale callback handling (expired menu -> recovery hint)
 
-#### P1.2 `/open` picker + contextual item mode
+#### P1.2 Item mode panel + contextual clarity
 
-- [ ] Redesign `/open` (no arg) to recent-item picker with `Open` buttons
-- [ ] Enter item mode from buttons; plain text routes to active item session
+- [x] Keep `/open` (no arg) as general-chat entry (no picker semantics)
 - [x] After `/save`, auto-enter item mode for the saved item (default continuity)
-- [ ] Add item action panel (`Ask | Sessions | Add Note | Exit`, optional `Open Viewer`)
-- [ ] Add compact context banner in contextual replies
+- [x] Add item action panel (`Exit`, optional `Open Viewer`)
+- [x] Show compact session summary in item-mode card (active turns + recent sessions count + recent activity datetime)
+- [x] Add compact context banner in contextual replies
+- [x] Add tests for panel callback flows and contextual reply rendering
 
 #### P1.3 Sessions/history no-ID flow
 
 - [ ] Redesign sessions listing to indexed `Resume` buttons + `New Session`
 - [ ] Add button-driven history pagination (`Prev/Next/Back`) without IDs
-- [x] Extend `/list [limit]` to include indexed `Open/Ask` inline buttons (same model as `/find`)
+- [x] Extend `/list [limit]` to include indexed `Open` inline buttons (simpler than `/find`)
 - [ ] Keep legacy ID-based commands as compatibility fallback only
+- [x] Deprecate `/ask` in Telegram UX and guide users to item-mode plain-text asks
 - [ ] Add end-to-end tests for discover (`/find` + `/list`) -> enter -> resume -> history -> exit flows
 - [ ] Update README to make button/context flow the primary UX
 

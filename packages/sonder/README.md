@@ -6,7 +6,7 @@ Sonder is a Telegram-first conversational personal knowledge system built on pi-
 
 - Source scope: public web URL only
 - Save contract: `/save <url> [#tags...]`
-- Ask contract: `/ask <itemId> <question>`
+- Ask contract (compatibility fallback): `/ask <itemId> <question>`
 - List contract: `/list [limit]`
 - Find contract: `/find <query> [limit]`
 - Annotation contracts: `/annotate <itemId> <text> [#tags...]`, `/ann list <itemId>`, `/ann del <annotationId>`
@@ -151,12 +151,15 @@ Dialogue usage in Telegram:
 
 Entry/discovery UX (P1.1 + P1.2/P1.3 slice currently implemented):
 
-- `/find` returns index-based results with inline buttons (`Open` / `Ask`).
-- `/list [limit]` also returns index-based rows with `Open` / `Ask` buttons.
+- `/find` returns index-based results with inline `Open` buttons.
+- `/list [limit]` returns index-based rows with `Open` buttons.
 - Callback payload contract: `sx:v1:<action>:<menuId>:<arg>`.
 - Internal IDs are hidden from `/find` and `/list` result text.
 - Expired button actions return recovery guidance (`/open`, `/list`, or `/find` again).
 - After `/save`, Telegram automatically enters item dialogue mode for the new item.
+- Item-mode entry replies now include action buttons: `Open Viewer | Exit`.
+- Session summary is shown directly in the item-mode card (active turns + recent sessions count + recent activity datetime).
+- Contextual plain-text replies include a compact context banner (item/general).
 
 Active dialogue mode is persisted per chat in SQLite, so mode/session can survive process restart.
 
@@ -209,15 +212,17 @@ Expected in terminal:
 # auto-enters item mode for saved item
 /exit
 /find language agents
-# tap "1 Open" or "1 Ask"
+# tap "1 Open"
 /list 2
-# tap "1 Open" or "1 Ask"
+# tap "1 Open"
 ```
 
 Expected:
 
 - `/save` auto-enters item mode for the saved item
-- `/find` and `/list` both return index-based rows with inline `Open` / `Ask` buttons
+- `/find` returns index-based rows with inline `Open` buttons
+- `/list` returns index-based rows with inline `Open` buttons
+- In Telegram UX, `/ask` is deprecated; open an item first, then ask in plain text.
 - result text does not expose internal item IDs
 - tapping a button opens item mode and returns a viewer URL
 

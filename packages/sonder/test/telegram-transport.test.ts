@@ -61,7 +61,7 @@ describe("TelegramBotRunner", () => {
 		tempDirs.length = 0;
 	});
 
-	it("formats /find results with button actions and no id exposure", async () => {
+	it("formats /find results with open button and no id exposure", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);
 
@@ -109,9 +109,8 @@ describe("TelegramBotRunner", () => {
 		expect(api.sent[0].text).toContain("🔎 Found 1 results for: language");
 		expect(api.sent[0].text).not.toContain("item_find");
 		expect(api.sent[0].inlineKeyboard?.[0]?.[0]?.text).toBe("1 Open");
-		expect(api.sent[0].inlineKeyboard?.[0]?.[1]?.text).toBe("1 Ask");
+		expect(api.sent[0].inlineKeyboard?.[0]?.[1]).toBeUndefined();
 		expect(api.sent[0].inlineKeyboard?.[0]?.[0]?.callbackData).toMatch(/^sx:v1:find_open:/);
-		expect(api.sent[0].inlineKeyboard?.[0]?.[1]?.callbackData).toMatch(/^sx:v1:find_ask:/);
 		app.close();
 	});
 
@@ -163,7 +162,7 @@ describe("TelegramBotRunner", () => {
 		await runner.pollOnce();
 
 		expect(api.answeredCallbackIds).toContain("cb_1");
-		expect(api.sent[1].text).toContain("Item mode opened from search result #1");
+		expect(api.sent[1].text).toContain("Item mode opened from result #1");
 		expect(api.sent[2].text).toContain("Item answer: what is key");
 		app.close();
 	});
@@ -231,7 +230,7 @@ describe("TelegramBotRunner", () => {
 		expect(api.sent[0].text).toContain("🗂 Recent items");
 		expect(api.sent[0].text).not.toContain("item_list");
 		expect(api.sent[0].inlineKeyboard?.[0]?.[0]?.callbackData).toMatch(/^sx:v1:list_open:/);
-		expect(api.sent[0].inlineKeyboard?.[0]?.[1]?.callbackData).toMatch(/^sx:v1:list_ask:/);
+		expect(api.sent[0].inlineKeyboard?.[0]?.[1]).toBeUndefined();
 		app.close();
 	});
 
@@ -388,7 +387,7 @@ describe("TelegramBotRunner", () => {
 		const firstApi = new FakeTelegramApi([{ updateId: 1, type: "message", chatId: 9, text: "/open item_open" }]);
 		const firstRunner = new TelegramBotRunner(firstApi, app);
 		await firstRunner.pollOnce();
-		expect(firstApi.sent[0].text).toContain("Opened item dialogue");
+		expect(firstApi.sent[0].text).toContain("Item mode opened");
 
 		const secondApi = new FakeTelegramApi([{ updateId: 2, type: "message", chatId: 9, text: "continue" }]);
 		const secondRunner = new TelegramBotRunner(secondApi, app);
@@ -499,14 +498,90 @@ describe("TelegramBotRunner", () => {
 		await runner.pollOnce();
 
 		expect(api.sent).toHaveLength(4);
-		expect(api.sent[0].text).toContain("Opened item dialogue");
+		expect(api.sent[0].text).toContain("Item mode opened");
 		expect(api.sent[1].text).toContain("Item answer: what is key");
 		expect(api.sent[2].text).toContain("Active item dialogue");
 		expect(api.sent[3].text).toContain("Exited active dialogue mode");
 		app.close();
 	});
 
-	it("splits long ask responses into multiple telegram messages", async () => {
+	it("supports item mode panel callbacks and contextual banner", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `Item answer: ${input.question}`,
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		app.itemsRepo.create({
+			id: "item_panel",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_panel",
+			itemId: "item_panel",
+			kind: "extracted-text",
+			path: join(root, "missing-panel.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 25, text: "/open item_panel" },
+			{ updateId: 2, type: "message", chatId: 25, text: "hello panel" },
+			{ updateId: 3, type: "callback", chatId: 25, callbackQueryId: "cb_ctx_exit", data: "sx:v1:ctx_exit:ctx:0" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[0].inlineKeyboard?.[0]?.[0]?.text).toBe("Exit");
+		expect(api.sent[0].inlineKeyboard?.[0]?.[1]).toBeUndefined();
+		expect(api.sent[0].text).toContain("Session: active");
+		expect(api.sent[0].text).toContain("Recent activity:");
+		expect(api.sent[1].text).toContain("🧠 In: item_panel");
+		expect(api.sent[1].text).toContain("Item answer: hello panel");
+		expect(api.sent[2].text).toContain("Exited active dialogue mode");
+		expect(api.answeredCallbackIds).toEqual(expect.arrayContaining(["cb_ctx_exit"]));
+		app.close();
+	});
+
+	it("returns /ask deprecation guidance in telegram mode", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "stub",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		const api = new FakeTelegramApi([{ updateId: 1, type: "message", chatId: 9, text: "/ask item_long what?" }]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent).toHaveLength(1);
+		expect(api.sent[0].text).toContain("/ask is deprecated");
+		app.close();
+	});
+
+	it("splits long active-item responses into multiple telegram messages", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);
 
@@ -531,12 +606,24 @@ describe("TelegramBotRunner", () => {
 			topic: null,
 			space: null,
 		});
+		app.artifactsRepo.create({
+			id: "art_long",
+			itemId: "item_long",
+			kind: "extracted-text",
+			path: join(root, "missing-long.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
 
-		const api = new FakeTelegramApi([{ updateId: 1, type: "message", chatId: 9, text: "/ask item_long what?" }]);
+		const api = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 9, text: "/open item_long" },
+			{ updateId: 2, type: "message", chatId: 9, text: "what?" },
+		]);
 		const runner = new TelegramBotRunner(api, app);
 		await runner.pollOnce();
 
-		expect(api.sent.length).toBeGreaterThan(1);
+		expect(api.sent.length).toBeGreaterThan(2);
 		app.close();
 	});
 

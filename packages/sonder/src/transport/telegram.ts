@@ -264,7 +264,7 @@ interface ItemMenuState {
 	expiresAtMs: number;
 }
 
-type CallbackAction = "find_open" | "find_ask" | "list_open" | "list_ask";
+type CallbackAction = "find_open" | "list_open" | "ctx_exit" | "ctx_viewer";
 
 interface CallbackPayload {
 	version: "v1";
@@ -330,7 +330,7 @@ function parseCallbackPayload(data: string): CallbackPayload | null {
 		return null;
 	}
 	const action = parts[2];
-	if (action !== "find_open" && action !== "find_ask" && action !== "list_open" && action !== "list_ask") {
+	if (action !== "find_open" && action !== "list_open" && action !== "ctx_exit" && action !== "ctx_viewer") {
 		return null;
 	}
 	return {
@@ -538,6 +538,73 @@ export class TelegramBotRunner {
 		return menu.itemIds[index - 1] ?? null;
 	}
 
+	private buildItemModeKeyboard(includeViewer: boolean): TelegramInlineKeyboard {
+		const row = includeViewer
+			? [
+					{ text: "Open Viewer", callbackData: buildCallbackPayload("ctx_viewer", "ctx", 0) },
+					{ text: "Exit", callbackData: buildCallbackPayload("ctx_exit", "ctx", 0) },
+				]
+			: [{ text: "Exit", callbackData: buildCallbackPayload("ctx_exit", "ctx", 0) }];
+		return [row];
+	}
+
+	private async sendItemModeOpenedMessage(
+		chatId: number,
+		header: string,
+		itemId: string,
+		sessionId: string,
+	): Promise<void> {
+		const viewerUrl = this.getViewerItemUrl ? this.getViewerItemUrl(itemId) : null;
+		const viewerLine = viewerUrl ? `\nViewer: ${viewerUrl}` : "";
+		const turns = this.app.listDialogueHistory(sessionId, 200).length;
+		const sessions = this.app.listItemDialogues(itemId);
+		const sessionsCount = sessions.length;
+		const recentAt = sessions.map((session) => session.createdAt).sort((left, right) => right.localeCompare(left))[0];
+		const recentLine = recentAt ? `\nRecent activity: ${recentAt}` : "";
+		const summary = `\nSession: active • ${turns} turns\nRecent sessions: ${sessionsCount}${recentLine}`;
+		await this.api.sendMessage(chatId, `${header}${summary}${viewerLine}\nSend messages directly. /exit to leave.`, {
+			inlineKeyboard: this.buildItemModeKeyboard(Boolean(viewerUrl)),
+		});
+	}
+
+	private formatContextualAnswer(chatId: number, answer: string, itemId?: string): string {
+		const mode = this.getChatMode(chatId);
+		if (!mode) {
+			return answer;
+		}
+		if (mode.mode === "item") {
+			const label = itemId ?? mode.itemId;
+			return `────────────\n🧠 In: ${label}\n────────────\n\n${answer}`;
+		}
+		return `────────────\n💬 In: General Chat\n────────────\n\n${answer}`;
+	}
+
+	private async handleContextAction(chatId: number, action: CallbackAction): Promise<void> {
+		const mode = this.getChatMode(chatId);
+		if (!mode) {
+			await this.api.sendMessage(chatId, "No active context. Use /find or /list, then open an item.");
+			return;
+		}
+
+		if (action === "ctx_exit") {
+			this.clearChatMode(chatId);
+			await this.api.sendMessage(chatId, "Exited active dialogue mode.");
+			return;
+		}
+
+		if (action === "ctx_viewer") {
+			if (mode.mode !== "item") {
+				await this.api.sendMessage(chatId, "Viewer is available in item mode only.");
+				return;
+			}
+			if (!this.getViewerItemUrl) {
+				await this.api.sendMessage(chatId, "Viewer is not enabled for this run.");
+				return;
+			}
+			await this.api.sendMessage(chatId, this.getViewerItemUrl(mode.itemId));
+		}
+	}
+
 	private async handleCallback(chatId: number, callbackQueryId: string, data: string): Promise<void> {
 		try {
 			const payload = parseCallbackPayload(data);
@@ -545,6 +612,11 @@ export class TelegramBotRunner {
 				await this.api.sendMessage(chatId, "Unsupported action. Use /open or /find again.");
 				return;
 			}
+			if (payload.action.startsWith("ctx_")) {
+				await this.handleContextAction(chatId, payload.action);
+				return;
+			}
+
 			const menu = this.getItemMenu(chatId, payload.menuId);
 			if (!menu) {
 				await this.api.sendMessage(chatId, "This menu expired. Use /open or /find again.");
@@ -571,12 +643,8 @@ export class TelegramBotRunner {
 				sessionId: opened.sessionId,
 			});
 
-			const viewerLine = this.getViewerItemUrl ? `\nViewer: ${this.getViewerItemUrl(opened.itemId)}` : "";
-			const promptLine = payload.action.endsWith("_ask") ? "\nSend your question." : "\nSend messages directly.";
-			await this.api.sendMessage(
-				chatId,
-				`🧠 Item mode opened from search result #${payload.argument}${viewerLine}${promptLine}\n/exit to leave.`,
-			);
+			const prompt = `🧠 Item mode opened from result #${payload.argument}.`;
+			await this.sendItemModeOpenedMessage(chatId, prompt, opened.itemId, opened.sessionId);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			await this.api.sendMessage(chatId, `Error (RUNTIME_ERROR): ${message}`);
@@ -609,7 +677,8 @@ export class TelegramBotRunner {
 
 				if (activeMode.mode === "item") {
 					const askResult = await this.app.askInItemDialogue(activeMode.itemId, activeMode.sessionId, text);
-					for (const chunk of splitForTelegram(`Answer for ${askResult.itemId}\n\n${askResult.answer}`)) {
+					const formatted = this.formatContextualAnswer(chatId, askResult.answer, askResult.itemId);
+					for (const chunk of splitForTelegram(formatted)) {
 						await this.api.sendMessage(chatId, chunk);
 					}
 					return;
@@ -619,9 +688,18 @@ export class TelegramBotRunner {
 				activeMode.history.push({ role: "user", content: text });
 				activeMode.history.push({ role: "assistant", content: response.answer });
 				this.setChatMode(chatId, activeMode);
-				for (const chunk of splitForTelegram(response.answer)) {
+				const formatted = this.formatContextualAnswer(chatId, response.answer);
+				for (const chunk of splitForTelegram(formatted)) {
 					await this.api.sendMessage(chatId, chunk);
 				}
+				return;
+			}
+
+			if (text.startsWith("/ask")) {
+				await this.api.sendMessage(
+					chatId,
+					"In Telegram, /ask is deprecated. Use /find or /list, tap Open, then ask in plain text.",
+				);
 				return;
 			}
 
@@ -635,10 +713,11 @@ export class TelegramBotRunner {
 					itemId: opened.itemId,
 					sessionId: opened.sessionId,
 				});
-				const viewerLine = this.getViewerItemUrl ? `\nViewer: ${this.getViewerItemUrl(opened.itemId)}` : "";
-				await this.api.sendMessage(
+				await this.sendItemModeOpenedMessage(
 					chatId,
-					`🧠 Item mode opened for saved item${viewerLine}\nSend messages directly. /exit to leave.`,
+					"🧠 Item mode opened for saved item.",
+					opened.itemId,
+					opened.sessionId,
 				);
 				return;
 			}
@@ -655,15 +734,10 @@ export class TelegramBotRunner {
 				);
 				const responseText = formatCommandResult(result);
 				const actionOpen: CallbackAction = menuKind === "find" ? "find_open" : "list_open";
-				const actionAsk: CallbackAction = menuKind === "find" ? "find_ask" : "list_ask";
 				const inlineKeyboard: TelegramInlineKeyboard = result.value.items.map((_, index) => [
 					{
 						text: `${index + 1} Open`,
 						callbackData: buildCallbackPayload(actionOpen, menuId, index + 1),
-					},
-					{
-						text: `${index + 1} Ask`,
-						callbackData: buildCallbackPayload(actionAsk, menuId, index + 1),
 					},
 				]);
 				await this.api.sendMessage(chatId, responseText, { inlineKeyboard });
@@ -701,11 +775,7 @@ export class TelegramBotRunner {
 				itemId: opened.itemId,
 				sessionId: opened.sessionId,
 			});
-			const viewerLine = this.getViewerItemUrl ? `\nViewer: ${this.getViewerItemUrl(opened.itemId)}` : "";
-			await this.api.sendMessage(
-				chatId,
-				`Opened item dialogue\nItem: ${opened.itemId}\nSession: ${opened.sessionId}${viewerLine}\nSend messages directly. /exit to leave.`,
-			);
+			await this.sendItemModeOpenedMessage(chatId, "🧠 Item mode opened.", opened.itemId, opened.sessionId);
 			return;
 		}
 
@@ -792,10 +862,7 @@ export class TelegramBotRunner {
 			itemId: resumed.itemId,
 			sessionId: resumed.sessionId,
 		});
-		await this.api.sendMessage(
-			chatId,
-			`Resumed item dialogue\nItem: ${resumed.itemId}\nSession: ${resumed.sessionId}`,
-		);
+		await this.sendItemModeOpenedMessage(chatId, "🧠 Item dialogue resumed.", resumed.itemId, resumed.sessionId);
 	}
 }
 
