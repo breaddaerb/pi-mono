@@ -42,16 +42,24 @@ describe("parseTelegramCommand", () => {
 		expect(result.error.code).toBe("MISSING_ARGUMENTS");
 	});
 
-	it("parses /list", () => {
+	it("parses /list with default limit", () => {
 		const result = parseTelegramCommand("/list");
 
 		expect(result.ok).toBe(true);
 		if (!result.ok) throw new Error("Expected list command to parse");
-		expect(result.value).toEqual({ type: "list" });
+		expect(result.value).toEqual({ type: "list", limit: 20 });
 	});
 
-	it("rejects /list with extra args", () => {
+	it("parses /list with explicit limit", () => {
 		const result = parseTelegramCommand("/list 10");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected list command to parse");
+		expect(result.value).toEqual({ type: "list", limit: 10 });
+	});
+
+	it("rejects /list with invalid limit", () => {
+		const result = parseTelegramCommand("/list ten");
 
 		expect(result.ok).toBe(false);
 		if (result.ok) throw new Error("Expected list command to fail");

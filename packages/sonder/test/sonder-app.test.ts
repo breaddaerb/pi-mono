@@ -120,7 +120,7 @@ describe("SonderApp", () => {
 			const saveResult = await app.processCommand(`/save ${server.baseUrl}/article #agents`);
 			expect(saveResult.ok).toBe(true);
 
-			const listResult = await app.processCommand("/list");
+			const listResult = await app.processCommand("/list 1");
 			expect(listResult.ok).toBe(true);
 			if (!listResult.ok || listResult.value.type !== "list") {
 				throw new Error("Expected list result");

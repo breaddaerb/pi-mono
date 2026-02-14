@@ -14,6 +14,7 @@ export interface ParsedAskCommand {
 
 export interface ParsedListCommand {
 	type: "list";
+	limit: number;
 }
 
 export interface ParseTelegramCommandError {
@@ -112,16 +113,29 @@ function parseAskCommand(input: string): ParseTelegramCommandResult {
 function parseListCommand(input: string): ParseTelegramCommandResult {
 	const raw = input.trim();
 	const body = raw.slice("/list".length).trim();
-	if (body.length > 0) {
+	if (body.length === 0) {
 		return {
-			ok: false,
-			error: { code: "MISSING_ARGUMENTS", message: "Expected: /list" },
+			ok: true,
+			value: {
+				type: "list",
+				limit: 20,
+			},
 		};
 	}
+
+	const parsedLimit = Number.parseInt(body, 10);
+	if (!Number.isFinite(parsedLimit) || String(parsedLimit) !== body || parsedLimit <= 0) {
+		return {
+			ok: false,
+			error: { code: "MISSING_ARGUMENTS", message: "Expected: /list [limit]" },
+		};
+	}
+
 	return {
 		ok: true,
 		value: {
 			type: "list",
+			limit: parsedLimit,
 		},
 	};
 }

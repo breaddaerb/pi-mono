@@ -114,7 +114,7 @@ export class SonderApp {
 					ok: true,
 					value: {
 						type: "list",
-						items: this.itemsRepo.listRecent().map((item) => ({
+						items: this.itemsRepo.listRecent(parsed.value.limit).map((item) => ({
 							id: item.id,
 							createdAt: item.createdAt,
 							sourceType: item.sourceType,

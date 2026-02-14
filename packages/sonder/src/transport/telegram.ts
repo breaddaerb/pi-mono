@@ -154,6 +154,75 @@ function formatPollingError(error: unknown): string {
 	return error.message;
 }
 
+const MAX_TELEGRAM_MESSAGE_LENGTH = 3500;
+
+function truncateMiddle(text: string, maxLength: number): string {
+	if (text.length <= maxLength) {
+		return text;
+	}
+	const left = Math.floor((maxLength - 3) / 2);
+	const right = maxLength - 3 - left;
+	return `${text.slice(0, left)}...${text.slice(text.length - right)}`;
+}
+
+function splitForTelegram(text: string): string[] {
+	if (text.length <= MAX_TELEGRAM_MESSAGE_LENGTH) {
+		return [text];
+	}
+	const chunks: string[] = [];
+	let remaining = text;
+	while (remaining.length > MAX_TELEGRAM_MESSAGE_LENGTH) {
+		const candidate = remaining.slice(0, MAX_TELEGRAM_MESSAGE_LENGTH);
+		const splitIndex = candidate.lastIndexOf("\n");
+		if (splitIndex > 0) {
+			chunks.push(remaining.slice(0, splitIndex));
+			remaining = remaining.slice(splitIndex + 1);
+			continue;
+		}
+		chunks.push(candidate);
+		remaining = remaining.slice(MAX_TELEGRAM_MESSAGE_LENGTH);
+	}
+	if (remaining.length > 0) {
+		chunks.push(remaining);
+	}
+	return chunks;
+}
+
+function formatCommandResult(result: Awaited<ReturnType<SonderApp["processCommand"]>>): string {
+	if (!result.ok) {
+		return `Error (${result.error.code}): ${result.error.message}`;
+	}
+
+	if (result.value.type === "save") {
+		const mode = result.value.usedFallback ? "fallback text mode" : "snapshot mode";
+		const tags = result.value.tags.length > 0 ? `\nTags: ${result.value.tags.map((tag) => `#${tag}`).join(" ")}` : "";
+		return (
+			[
+				"Saved item",
+				`ID: ${result.value.itemId}`,
+				`URL: ${result.value.url}`,
+				`Capture: ${mode}`,
+				`Artifacts: ${result.value.artifactIds.length}`,
+			].join("\n") + tags
+		);
+	}
+
+	if (result.value.type === "list") {
+		if (result.value.items.length === 0) {
+			return "No saved items yet. Use /save <url> first.";
+		}
+		const lines = result.value.items.map((item, index) => {
+			const tags = item.tags.length > 0 ? ` ${item.tags.map((tag) => `#${tag}`).join(" ")}` : "";
+			const url = truncateMiddle(item.originalUrl, 100);
+			return `${index + 1}. ${item.id}\n   ${url}${tags}`;
+		});
+		return `Recent items (${result.value.items.length})\n\n${lines.join("\n\n")}`;
+	}
+
+	const citations = result.value.citations.length > 0 ? `\n\nCitations: ${result.value.citations.join(" ")}` : "";
+	return `Answer for ${result.value.itemId}\n\n${result.value.answer}${citations}`;
+}
+
 export class TelegramBotRunner {
 	private offset = 0;
 	private readonly longPollSeconds: number;
@@ -196,8 +265,10 @@ export class TelegramBotRunner {
 		}
 
 		const result = await this.app.processCommand(text);
-		const output = result.ok ? result.value : result.error;
-		await this.api.sendMessage(chatId, JSON.stringify(output, null, 2));
+		const responseText = formatCommandResult(result);
+		for (const chunk of splitForTelegram(responseText)) {
+			await this.api.sendMessage(chatId, chunk);
+		}
 	}
 }
 
