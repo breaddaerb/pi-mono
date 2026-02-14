@@ -505,6 +505,127 @@ describe("TelegramBotRunner", () => {
 		app.close();
 	});
 
+	it("shows sessions buttons and supports resume/new session callbacks", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `Item answer: ${input.question}`,
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		app.itemsRepo.create({
+			id: "item_sessions",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com/sessions",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_sessions",
+			itemId: "item_sessions",
+			kind: "extracted-text",
+			path: join(root, "missing-sessions.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
+		const preOpened = app.openItemDialogue("item_sessions");
+		await app.askInItemDialogue("item_sessions", preOpened.sessionId, "first turn");
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 26, text: "/open item_sessions" },
+			{ updateId: 2, type: "message", chatId: 26, text: "/sessions" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[1].text).toContain("Sessions");
+		const resumeData = api.sent[1].inlineKeyboard?.[0]?.[0]?.callbackData;
+		const newSessionData = api.sent[1].inlineKeyboard?.[api.sent[1].inlineKeyboard.length - 1]?.[0]?.callbackData;
+		if (!resumeData || !newSessionData) {
+			throw new Error("Expected session callback data");
+		}
+
+		api.enqueueUpdates([
+			{ updateId: 3, type: "callback", chatId: 26, callbackQueryId: "cb_resume", data: resumeData },
+			{ updateId: 4, type: "callback", chatId: 26, callbackQueryId: "cb_new", data: newSessionData },
+		]);
+		await runner.pollOnce();
+
+		expect(api.sent[2].text).toContain("Item dialogue resumed");
+		expect(api.sent[3].text).toContain("New item session started");
+		app.close();
+	});
+
+	it("shows history with pagination buttons in item mode", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `Item answer: ${input.question}`,
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		app.itemsRepo.create({
+			id: "item_hist_btn",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com/hist",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_hist_btn",
+			itemId: "item_hist_btn",
+			kind: "extracted-text",
+			path: join(root, "missing-hist-btn.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+		const opened = app.openItemDialogue("item_hist_btn");
+		for (let index = 0; index < 10; index++) {
+			await app.askInItemDialogue("item_hist_btn", opened.sessionId, `q${index}`);
+		}
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 27, text: "/open item_hist_btn" },
+			{ updateId: 2, type: "message", chatId: 27, text: "/history" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[1].text).toContain("page 1/");
+		const nextData = api.sent[1].inlineKeyboard?.[0]?.[1]?.callbackData;
+		if (!nextData) {
+			throw new Error("Expected next history callback data");
+		}
+
+		api.enqueueUpdates([{ updateId: 3, type: "callback", chatId: 27, callbackQueryId: "cb_next", data: nextData }]);
+		await runner.pollOnce();
+
+		expect(api.sent[2].text).toContain("History for");
+		expect(api.answeredCallbackIds).toContain("cb_next");
+		app.close();
+	});
+
 	it("supports item mode panel callbacks and contextual banner", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);

@@ -156,12 +156,13 @@ Priority order:
 
 #### P1.3 Sessions/history no-ID flow
 
-- [ ] Redesign sessions listing to indexed `Resume` buttons + `New Session`
-- [ ] Add button-driven history pagination (`Prev/Next/Back`) without IDs
+- [x] Redesign sessions listing to indexed `Resume` buttons + `New Session`
+- [x] Add button-driven history pagination (`Prev/Next/Back`) without IDs
 - [x] Extend `/list [limit]` to include indexed `Open` inline buttons (simpler than `/find`)
-- [ ] Keep legacy ID-based commands as compatibility fallback only
+- [x] Keep legacy ID-based commands as compatibility fallback only
+- [x] Make `/sessions` context-first in Telegram UX (primary path: active item -> `/sessions`)
 - [x] Deprecate `/ask` in Telegram UX and guide users to item-mode plain-text asks
-- [ ] Add end-to-end tests for discover (`/find` + `/list`) -> enter -> resume -> history -> exit flows
+- [x] Add end-to-end tests for discover (`/find` + `/list`) -> enter -> resume -> history -> exit flows
 - [ ] Update README to make button/context flow the primary UX
 
 ### 11.2 Viewer polish (P2)

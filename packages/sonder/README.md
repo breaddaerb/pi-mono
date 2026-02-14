@@ -143,7 +143,7 @@ Dialogue usage in Telegram:
 /open               # enter general chat mode
 /where              # show active mode
 /exit               # leave active mode
-/sessions <itemId>  # list sessions for item
+/sessions         # list sessions for current active item
 /resume <sessionId> # resume item session
 /history [sessionId] # show recent turns (active or explicit session)
 /find <query> [limit] # keyword retrieval over items/annotations/content
@@ -159,6 +159,8 @@ Entry/discovery UX (P1.1 + P1.2/P1.3 slice currently implemented):
 - After `/save`, Telegram automatically enters item dialogue mode for the new item.
 - Item-mode entry replies now include action buttons: `Open Viewer | Exit`.
 - Session summary is shown directly in the item-mode card (active turns + recent sessions count + recent activity datetime).
+- `/sessions [itemId]` now returns indexed `Resume` buttons plus `New Session`.
+- `/history` in item mode now includes pagination buttons (`Prev | Next | Back`).
 - Contextual plain-text replies include a compact context banner (item/general).
 
 Active dialogue mode is persisted per chat in SQLite, so mode/session can survive process restart.
@@ -166,8 +168,10 @@ Active dialogue mode is persisted per chat in SQLite, so mode/session can surviv
 Session resume flow example:
 
 ```text
-/sessions <itemId>
-/resume <sessionId>
+/find language
+# tap "1 Open"
+/sessions
+# tap "1 Resume" or "New Session"
 /history
 /where
 ```

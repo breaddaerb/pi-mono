@@ -264,7 +264,31 @@ interface ItemMenuState {
 	expiresAtMs: number;
 }
 
-type CallbackAction = "find_open" | "list_open" | "ctx_exit" | "ctx_viewer";
+interface SessionMenuState {
+	itemId: string;
+	sessionIds: string[];
+	createdAtMs: number;
+	expiresAtMs: number;
+}
+
+interface HistoryMenuState {
+	sessionId: string;
+	page: number;
+	pageSize: number;
+	createdAtMs: number;
+	expiresAtMs: number;
+}
+
+type CallbackAction =
+	| "find_open"
+	| "list_open"
+	| "sess_resume"
+	| "sess_new"
+	| "hist_prev"
+	| "hist_next"
+	| "hist_back"
+	| "ctx_exit"
+	| "ctx_viewer";
 
 interface CallbackPayload {
 	version: "v1";
@@ -291,7 +315,7 @@ type ModeCommand =
 	| { type: "open"; itemId?: string }
 	| { type: "exit" }
 	| { type: "where" }
-	| { type: "sessions"; itemId: string }
+	| { type: "sessions"; itemId?: string }
 	| { type: "resume"; sessionId: string }
 	| { type: "history"; sessionId?: string };
 
@@ -309,7 +333,7 @@ function parseModeCommand(text: string): ModeCommand | null {
 	if (parts[0] === "/where") {
 		return { type: "where" };
 	}
-	if (parts[0] === "/sessions" && parts[1]) {
+	if (parts[0] === "/sessions") {
 		return { type: "sessions", itemId: parts[1] };
 	}
 	if (parts[0] === "/resume" && parts[1]) {
@@ -330,7 +354,17 @@ function parseCallbackPayload(data: string): CallbackPayload | null {
 		return null;
 	}
 	const action = parts[2];
-	if (action !== "find_open" && action !== "list_open" && action !== "ctx_exit" && action !== "ctx_viewer") {
+	if (
+		action !== "find_open" &&
+		action !== "list_open" &&
+		action !== "sess_resume" &&
+		action !== "sess_new" &&
+		action !== "hist_prev" &&
+		action !== "hist_next" &&
+		action !== "hist_back" &&
+		action !== "ctx_exit" &&
+		action !== "ctx_viewer"
+	) {
 		return null;
 	}
 	return {
@@ -424,6 +458,8 @@ export class TelegramBotRunner {
 	private readonly chatModes = new Map<number, ChatModeState>();
 	private readonly chatModeStateRepo: ChatModeStateRepo;
 	private readonly itemMenus = new Map<number, Map<string, ItemMenuState>>();
+	private readonly sessionMenus = new Map<number, Map<string, SessionMenuState>>();
+	private readonly historyMenus = new Map<number, Map<string, HistoryMenuState>>();
 
 	constructor(
 		private readonly api: TelegramApi,
@@ -538,6 +574,88 @@ export class TelegramBotRunner {
 		return menu.itemIds[index - 1] ?? null;
 	}
 
+	private createSessionMenu(chatId: number, itemId: string, sessionIds: string[]): string {
+		const chatMenus = this.sessionMenus.get(chatId) ?? new Map<string, SessionMenuState>();
+		const createdAtMs = Date.now();
+		const menuId = randomUUID().slice(0, 8);
+		chatMenus.set(menuId, {
+			itemId,
+			sessionIds,
+			createdAtMs,
+			expiresAtMs: createdAtMs + FIND_MENU_TTL_MS,
+		});
+		this.sessionMenus.set(chatId, chatMenus);
+		return menuId;
+	}
+
+	private getSessionMenu(chatId: number, menuId: string): SessionMenuState | null {
+		const chatMenus = this.sessionMenus.get(chatId);
+		if (!chatMenus) {
+			return null;
+		}
+		const menu = chatMenus.get(menuId);
+		if (!menu) {
+			return null;
+		}
+		if (Date.now() > menu.expiresAtMs) {
+			chatMenus.delete(menuId);
+			return null;
+		}
+		return menu;
+	}
+
+	private createHistoryMenu(chatId: number, sessionId: string, page: number, pageSize: number): string {
+		const chatMenus = this.historyMenus.get(chatId) ?? new Map<string, HistoryMenuState>();
+		const createdAtMs = Date.now();
+		const menuId = randomUUID().slice(0, 8);
+		chatMenus.set(menuId, {
+			sessionId,
+			page,
+			pageSize,
+			createdAtMs,
+			expiresAtMs: createdAtMs + FIND_MENU_TTL_MS,
+		});
+		this.historyMenus.set(chatId, chatMenus);
+		return menuId;
+	}
+
+	private getHistoryMenu(chatId: number, menuId: string): HistoryMenuState | null {
+		const chatMenus = this.historyMenus.get(chatId);
+		if (!chatMenus) {
+			return null;
+		}
+		const menu = chatMenus.get(menuId);
+		if (!menu) {
+			return null;
+		}
+		if (Date.now() > menu.expiresAtMs) {
+			chatMenus.delete(menuId);
+			return null;
+		}
+		return menu;
+	}
+
+	private getSessionIdByIndex(menu: SessionMenuState, argument: string): string | null {
+		const index = Number.parseInt(argument, 10);
+		if (!Number.isFinite(index) || index <= 0) {
+			return null;
+		}
+		return menu.sessionIds[index - 1] ?? null;
+	}
+
+	private formatHistoryPage(sessionId: string, page: number, pageSize: number): string {
+		const turns = this.app.listDialogueHistory(sessionId, 200);
+		if (turns.length === 0) {
+			return `History for ${sessionId}\n\n(no turns)`;
+		}
+		const totalPages = Math.max(1, Math.ceil(turns.length / pageSize));
+		const safePage = Math.max(0, Math.min(page, totalPages - 1));
+		const start = safePage * pageSize;
+		const pageTurns = turns.slice(start, start + pageSize);
+		const lines = pageTurns.map((turn) => `${turn.role}: ${truncateMiddle(turn.content, 280)}`);
+		return `History for ${sessionId} (page ${safePage + 1}/${totalPages})\n\n${lines.join("\n\n")}`;
+	}
+
 	private buildItemModeKeyboard(includeViewer: boolean): TelegramInlineKeyboard {
 		const row = includeViewer
 			? [
@@ -614,6 +732,70 @@ export class TelegramBotRunner {
 			}
 			if (payload.action.startsWith("ctx_")) {
 				await this.handleContextAction(chatId, payload.action);
+				return;
+			}
+
+			if (payload.action === "sess_resume") {
+				const menu = this.getSessionMenu(chatId, payload.menuId);
+				if (!menu) {
+					await this.api.sendMessage(chatId, "This sessions menu expired. Use /sessions again.");
+					return;
+				}
+				const sessionId = this.getSessionIdByIndex(menu, payload.argument);
+				if (!sessionId) {
+					await this.api.sendMessage(chatId, "Invalid session selection. Use /sessions again.");
+					return;
+				}
+				const resumed = this.app.resumeItemDialogue(sessionId);
+				this.setChatMode(chatId, { mode: "item", itemId: resumed.itemId, sessionId: resumed.sessionId });
+				await this.sendItemModeOpenedMessage(
+					chatId,
+					"🧠 Item dialogue resumed.",
+					resumed.itemId,
+					resumed.sessionId,
+				);
+				return;
+			}
+
+			if (payload.action === "sess_new") {
+				const menu = this.getSessionMenu(chatId, payload.menuId);
+				if (!menu) {
+					await this.api.sendMessage(chatId, "This sessions menu expired. Use /sessions again.");
+					return;
+				}
+				const opened = this.app.openItemDialogue(menu.itemId);
+				this.setChatMode(chatId, { mode: "item", itemId: opened.itemId, sessionId: opened.sessionId });
+				await this.sendItemModeOpenedMessage(
+					chatId,
+					"🧠 New item session started.",
+					opened.itemId,
+					opened.sessionId,
+				);
+				return;
+			}
+
+			if (payload.action === "hist_prev" || payload.action === "hist_next" || payload.action === "hist_back") {
+				const menu = this.getHistoryMenu(chatId, payload.menuId);
+				if (!menu) {
+					await this.api.sendMessage(chatId, "This history menu expired. Use /history again.");
+					return;
+				}
+				if (payload.action === "hist_back") {
+					await this.api.sendMessage(chatId, "Back to item dialogue. Send your next message.");
+					return;
+				}
+				const direction = payload.action === "hist_prev" ? -1 : 1;
+				const nextPage = Math.max(0, menu.page + direction);
+				const nextMenuId = this.createHistoryMenu(chatId, menu.sessionId, nextPage, menu.pageSize);
+				const text = this.formatHistoryPage(menu.sessionId, nextPage, menu.pageSize);
+				const keyboard: TelegramInlineKeyboard = [
+					[
+						{ text: "Prev", callbackData: buildCallbackPayload("hist_prev", nextMenuId, 0) },
+						{ text: "Next", callbackData: buildCallbackPayload("hist_next", nextMenuId, 0) },
+						{ text: "Back", callbackData: buildCallbackPayload("hist_back", nextMenuId, 0) },
+					],
+				];
+				await this.api.sendMessage(chatId, text, { inlineKeyboard: keyboard });
 				return;
 			}
 
@@ -803,26 +985,48 @@ export class TelegramBotRunner {
 		}
 
 		if (command.type === "sessions") {
-			const sessions = this.app.listItemDialogues(command.itemId);
-			if (sessions.length === 0) {
-				await this.api.sendMessage(chatId, `No sessions for item ${command.itemId}.`);
+			const activeMode = this.getChatMode(chatId);
+			const activeItemId = activeMode && activeMode.mode === "item" ? activeMode.itemId : undefined;
+			const itemId = command.itemId ?? activeItemId;
+			if (!itemId) {
+				await this.api.sendMessage(chatId, "No active item. Use /find or /list, tap Open, then run /sessions.");
 				return;
 			}
-			const lines = sessions.map((session, index) => `${index + 1}. ${session.sessionId} (${session.createdAt})`);
-			await this.api.sendMessage(chatId, `Sessions for ${command.itemId}\n\n${lines.join("\n")}`);
+			const sessions = this.app.listItemDialogues(itemId);
+			if (sessions.length === 0) {
+				await this.api.sendMessage(chatId, `No sessions for current item.`);
+				return;
+			}
+			const lines = sessions.map((session, index) => `${index + 1}. ${session.createdAt}`);
+			const menuId = this.createSessionMenu(
+				chatId,
+				itemId,
+				sessions.map((session) => session.sessionId),
+			);
+			const keyboard: TelegramInlineKeyboard = [
+				...sessions.map((_, index) => [
+					{ text: `${index + 1} Resume`, callbackData: buildCallbackPayload("sess_resume", menuId, index + 1) },
+				]),
+				[{ text: "New Session", callbackData: buildCallbackPayload("sess_new", menuId, 0) }],
+			];
+			await this.api.sendMessage(chatId, `Sessions\n\n${lines.join("\n")}`, { inlineKeyboard: keyboard });
 			return;
 		}
 
 		if (command.type === "history") {
 			if (command.sessionId) {
-				const turns = this.app.listDialogueHistory(command.sessionId, 20);
-				if (turns.length === 0) {
-					await this.api.sendMessage(chatId, `No turns in session ${command.sessionId}.`);
-					return;
-				}
-				const lines = turns.map((turn) => `${turn.role}: ${truncateMiddle(turn.content, 280)}`);
-				for (const chunk of splitForTelegram(`History for ${command.sessionId}\n\n${lines.join("\n\n")}`)) {
-					await this.api.sendMessage(chatId, chunk);
+				const pageSize = 8;
+				const menuId = this.createHistoryMenu(chatId, command.sessionId, 0, pageSize);
+				const text = this.formatHistoryPage(command.sessionId, 0, pageSize);
+				const keyboard: TelegramInlineKeyboard = [
+					[
+						{ text: "Prev", callbackData: buildCallbackPayload("hist_prev", menuId, 0) },
+						{ text: "Next", callbackData: buildCallbackPayload("hist_next", menuId, 0) },
+						{ text: "Back", callbackData: buildCallbackPayload("hist_back", menuId, 0) },
+					],
+				];
+				for (const chunk of splitForTelegram(text)) {
+					await this.api.sendMessage(chatId, chunk, chunk === text ? { inlineKeyboard: keyboard } : undefined);
 				}
 				return;
 			}
@@ -844,14 +1048,18 @@ export class TelegramBotRunner {
 				return;
 			}
 
-			const turns = this.app.listDialogueHistory(mode.sessionId, 20);
-			if (turns.length === 0) {
-				await this.api.sendMessage(chatId, `No turns in session ${mode.sessionId}.`);
-				return;
-			}
-			const lines = turns.map((turn) => `${turn.role}: ${truncateMiddle(turn.content, 280)}`);
-			for (const chunk of splitForTelegram(`History for ${mode.sessionId}\n\n${lines.join("\n\n")}`)) {
-				await this.api.sendMessage(chatId, chunk);
+			const pageSize = 8;
+			const menuId = this.createHistoryMenu(chatId, mode.sessionId, 0, pageSize);
+			const text = this.formatHistoryPage(mode.sessionId, 0, pageSize);
+			const keyboard: TelegramInlineKeyboard = [
+				[
+					{ text: "Prev", callbackData: buildCallbackPayload("hist_prev", menuId, 0) },
+					{ text: "Next", callbackData: buildCallbackPayload("hist_next", menuId, 0) },
+					{ text: "Back", callbackData: buildCallbackPayload("hist_back", menuId, 0) },
+				],
+			];
+			for (const chunk of splitForTelegram(text)) {
+				await this.api.sendMessage(chatId, chunk, chunk === text ? { inlineKeyboard: keyboard } : undefined);
 			}
 			return;
 		}
