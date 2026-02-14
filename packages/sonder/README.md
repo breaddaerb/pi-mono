@@ -113,3 +113,34 @@ If your network requires a proxy:
 ```bash
 SONDER_TELEGRAM_BOT_TOKEN="<bot-token>" SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890" SONDER_RESPONDER=codex npx tsx src/main.ts --telegram --root ./.sonder-data
 ```
+
+### Minimal E2E checklist (live)
+
+1. Connectivity check
+
+```bash
+SONDER_TELEGRAM_BOT_TOKEN="..." SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890" npx tsx src/main.ts --telegram-check
+```
+
+Expected: JSON with `"ok": true`.
+
+2. Start bot polling
+
+```bash
+SONDER_TELEGRAM_BOT_TOKEN="..." SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890" SONDER_RESPONDER=codex npx tsx src/main.ts --telegram --root ./.sonder-data
+```
+
+3. In Telegram chat with your bot
+
+```text
+/save https://lucumr.pocoo.org/2026/2/9/a-language-for-agents #agents
+/list
+/ask <itemId> what is the main thesis?
+```
+
+4. Expected behavior
+
+- `/save` returns item summary with item ID
+- `/list` shows saved items and IDs
+- `/ask` returns a non-empty answer
+- no recurring polling transport errors in terminal
