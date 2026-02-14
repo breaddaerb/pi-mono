@@ -204,12 +204,18 @@ function renderViewerPage(itemId: string): string {
         const frameWindow = iframe.contentWindow;
         const scrollX = frameWindow ? frameWindow.scrollX : 0;
         const scrollY = frameWindow ? frameWindow.scrollY : 0;
+        const previousVisibility = iframe.style.visibility;
+
+        iframe.style.visibility = 'hidden';
 
         iframe.addEventListener('load', () => {
           const nextWindow = iframe.contentWindow;
           if (nextWindow) {
             nextWindow.scrollTo(scrollX, scrollY);
           }
+          requestAnimationFrame(() => {
+            iframe.style.visibility = previousVisibility || 'visible';
+          });
         }, { once: true });
 
         iframe.src = '/viewer/items/' + encodeURIComponent(itemId) + '/snapshot?ts=' + Date.now();

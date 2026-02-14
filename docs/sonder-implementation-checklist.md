@@ -168,7 +168,7 @@ Priority order:
 ### 11.2 Viewer polish (P2)
 
 - [ ] Improve in-viewer visual hierarchy and interaction affordances
-- [ ] Remove post-annotation iframe reload flicker/scroll jump (seamless update)
+- [x] Remove post-annotation iframe reload flicker/scroll jump (seamless update)
 - [ ] Add robust anchor validation/repair hooks (HTML first)
 - [ ] Add annotation tagging/filtering UX (viewer-first)
 

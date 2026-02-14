@@ -246,6 +246,7 @@ Expected:
 - Click `Highlight` (or `Underline` / `Note`)
 - Verify annotation appears in sidebar
 - Click `Edit` then `Delete` to confirm update and removal
+- Verify snapshot refresh preserves scroll context without visible top-jump flicker
 
 5. Back in Telegram, test multi-turn dialogue on active item
 

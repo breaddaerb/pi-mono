@@ -78,6 +78,7 @@ describe("viewer server", () => {
 			const snapshotHtml = await snapshotResponse.text();
 			expect(snapshotHtml).toContain("sonder-overlay-script");
 			expect(snapshotHtml).toContain("findRangeAcrossTextNodes");
+			expect(page).toContain("iframe.style.visibility = 'hidden'");
 
 			const createResponse = await fetch(`${viewer.baseUrl}/viewer/api/items/item_view/annotations`, {
 				method: "POST",
