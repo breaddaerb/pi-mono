@@ -107,13 +107,14 @@ describe("TelegramBotRunner", () => {
 
 		expect(api.sent).toHaveLength(1);
 		expect(api.sent[0].text).toContain("🔎 Find: language");
-		expect(api.sent[0].text).toContain("Filters: time=all");
+		expect(api.sent[0].text).toContain("Filters: Time=All");
 		expect(api.sent[0].text).toContain("reasons:");
 		expect(api.sent[0].text).toContain("match:");
 		expect(api.sent[0].text).not.toContain("item_find");
 		expect(api.sent[0].inlineKeyboard?.[0]?.[0]?.text).toBe("1 Open");
 		expect(api.sent[0].inlineKeyboard?.[1]?.[0]?.text).toContain("Time:");
 		expect(api.sent[0].inlineKeyboard?.[1]?.[1]?.text).toContain("Source:");
+		expect(api.sent[0].inlineKeyboard?.[3]?.[1]?.text).toBe("Prev");
 		expect(api.sent[0].inlineKeyboard?.[0]?.[0]?.callbackData).toMatch(/^sx:v1:find_open:/);
 		app.close();
 	});
@@ -171,8 +172,21 @@ describe("TelegramBotRunner", () => {
 		]);
 		await runner.pollOnce();
 
-		expect(api.sent[3].text).toContain("Filters: time=7d");
-		expect(api.answeredCallbackIds).toEqual(expect.arrayContaining(["cb_filter_open", "cb_filter_set"]));
+		expect(api.sent[3].text).toContain("Filters: Time=Last 7d");
+
+		const tagFilterData = api.sent[3].inlineKeyboard?.[2]?.[0]?.callbackData;
+		if (!tagFilterData) {
+			throw new Error("Expected tag filter callback data");
+		}
+		api.enqueueUpdates([
+			{ updateId: 5, type: "callback", chatId: 41, callbackQueryId: "cb_tag_open", data: tagFilterData },
+		]);
+		await runner.pollOnce();
+		expect(api.sent[4].text).toContain("Select tag filter");
+
+		expect(api.answeredCallbackIds).toEqual(
+			expect.arrayContaining(["cb_filter_open", "cb_filter_set", "cb_tag_open"]),
+		);
 		app.close();
 	});
 

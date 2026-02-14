@@ -281,6 +281,7 @@ interface ItemMenuState {
 	source: SourceFilter;
 	tag: string | null;
 	sort: SortFilter;
+	tagPage: number;
 	createdAtMs: number;
 	expiresAtMs: number;
 }
@@ -308,10 +309,13 @@ type CallbackAction =
 	| "menu_source"
 	| "menu_source_set"
 	| "menu_tag"
+	| "menu_tag_set"
+	| "menu_tag_page"
 	| "menu_sort"
 	| "menu_sort_set"
 	| "menu_back"
 	| "menu_clear"
+	| "menu_prev"
 	| "menu_next"
 	| "sess_resume"
 	| "sess_new"
@@ -393,10 +397,13 @@ function parseCallbackPayload(data: string): CallbackPayload | null {
 		action !== "menu_source" &&
 		action !== "menu_source_set" &&
 		action !== "menu_tag" &&
+		action !== "menu_tag_set" &&
+		action !== "menu_tag_page" &&
 		action !== "menu_sort" &&
 		action !== "menu_sort_set" &&
 		action !== "menu_back" &&
 		action !== "menu_clear" &&
+		action !== "menu_prev" &&
 		action !== "menu_next" &&
 		action !== "sess_resume" &&
 		action !== "sess_new" &&
@@ -592,6 +599,7 @@ export class TelegramBotRunner {
 			source: "any",
 			tag: null,
 			sort: "newest",
+			tagPage: 0,
 			createdAtMs,
 			expiresAtMs: createdAtMs + FIND_MENU_TTL_MS,
 		});
@@ -694,7 +702,7 @@ export class TelegramBotRunner {
 					: "";
 			return `${index + 1}. ${truncateMiddle(entry.originalUrl, 96)}${tags}\n   ${entry.sourceType} · ${entry.createdAt}${reasonLine}${snippetLine}`;
 		});
-		const filterSummary = `Filters: time=${menu.time} source=${menu.source} tag=${menu.tag ?? "any"} sort=${menu.sort}`;
+		const filterSummary = `Filters: Time=${this.formatTimeFilter(menu.time)} | Source=${this.formatSourceFilter(menu.source)} | Tag=${menu.tag ?? "Any"} | Sort=${this.formatSortFilter(menu.sort)}`;
 		return `${title} (${paged.total}) [page ${paged.page + 1}/${paged.totalPages}]\n${filterSummary}\n\n${rows.join("\n\n")}`;
 	}
 
@@ -706,19 +714,29 @@ export class TelegramBotRunner {
 				callbackData: buildCallbackPayload(menu.kind === "find" ? "find_open" : "list_open", menuId, index + 1),
 			},
 		]);
-		const tagLabel = menu.tag ? `Tag:${menu.tag}` : "Tag:any";
+		const tagLabel = menu.tag ? `Tag:${menu.tag}` : "Tag:Any";
 		return [
 			...itemRows,
 			[
-				{ text: `Time:${menu.time}`, callbackData: buildCallbackPayload("menu_time", menuId, 0) },
-				{ text: `Source:${menu.source}`, callbackData: buildCallbackPayload("menu_source", menuId, 0) },
+				{
+					text: `Time:${this.formatTimeFilter(menu.time)}`,
+					callbackData: buildCallbackPayload("menu_time", menuId, 0),
+				},
+				{
+					text: `Source:${this.formatSourceFilter(menu.source)}`,
+					callbackData: buildCallbackPayload("menu_source", menuId, 0),
+				},
 			],
 			[
 				{ text: tagLabel, callbackData: buildCallbackPayload("menu_tag", menuId, 0) },
-				{ text: `Sort:${menu.sort}`, callbackData: buildCallbackPayload("menu_sort", menuId, 0) },
+				{
+					text: `Sort:${this.formatSortFilter(menu.sort)}`,
+					callbackData: buildCallbackPayload("menu_sort", menuId, 0),
+				},
 			],
 			[
 				{ text: "Clear", callbackData: buildCallbackPayload("menu_clear", menuId, 0) },
+				{ text: "Prev", callbackData: buildCallbackPayload("menu_prev", menuId, 0) },
 				{ text: "Next", callbackData: buildCallbackPayload("menu_next", menuId, 0) },
 			],
 		];
@@ -761,6 +779,22 @@ export class TelegramBotRunner {
 		];
 	}
 
+	private formatTimeFilter(filter: TimeFilter): string {
+		if (filter === "today") return "Today";
+		if (filter === "7d") return "Last 7d";
+		if (filter === "30d") return "Last 30d";
+		if (filter === "year") return "This year";
+		return "All";
+	}
+
+	private formatSourceFilter(filter: SourceFilter): string {
+		return filter === "web" ? "Web" : "Any";
+	}
+
+	private formatSortFilter(filter: SortFilter): string {
+		return filter === "oldest" ? "Oldest" : "Newest";
+	}
+
 	private parseTimeFilter(argument: string): TimeFilter | null {
 		if (argument === "0") return "all";
 		if (argument === "1") return "today";
@@ -782,19 +816,66 @@ export class TelegramBotRunner {
 		return null;
 	}
 
-	private nextTagFilter(menu: ItemMenuState): string | null {
-		const tags = Array.from(new Set(menu.entries.flatMap((entry) => entry.tags))).sort();
+	private collectMenuTags(menu: ItemMenuState): string[] {
+		return Array.from(new Set(menu.entries.flatMap((entry) => entry.tags))).sort();
+	}
+
+	private buildTagMenuKeyboard(menuId: string, menu: ItemMenuState): TelegramInlineKeyboard {
+		const tags = this.collectMenuTags(menu);
 		if (tags.length === 0) {
+			return [[{ text: "Back", callbackData: buildCallbackPayload("menu_back", menuId, 0) }]];
+		}
+		const pageSize = 6;
+		const totalPages = Math.max(1, Math.ceil(tags.length / pageSize));
+		const safePage = Math.max(0, Math.min(menu.tagPage, totalPages - 1));
+		const start = safePage * pageSize;
+		const pageTags = tags.slice(start, start + pageSize);
+		const tagRows = pageTags.map((tag, index) => [
+			{
+				text: tag,
+				callbackData: buildCallbackPayload("menu_tag_set", menuId, start + index + 1),
+			},
+		]);
+		const navRow: TelegramInlineButton[] = [];
+		if (totalPages > 1) {
+			navRow.push({ text: "Prev", callbackData: buildCallbackPayload("menu_tag_page", menuId, safePage - 1) });
+			navRow.push({
+				text: `${safePage + 1}/${totalPages}`,
+				callbackData: buildCallbackPayload("menu_tag_page", menuId, safePage),
+			});
+			navRow.push({ text: "Next", callbackData: buildCallbackPayload("menu_tag_page", menuId, safePage + 1) });
+		}
+		const controls: TelegramInlineButton[] = [
+			{ text: "Any", callbackData: buildCallbackPayload("menu_tag_set", menuId, 0) },
+			{ text: "Back", callbackData: buildCallbackPayload("menu_back", menuId, 0) },
+		];
+		return navRow.length > 0 ? [...tagRows, navRow, controls] : [...tagRows, controls];
+	}
+
+	private parseTagPage(argument: string, totalPages: number): number {
+		const parsed = Number.parseInt(argument, 10);
+		if (!Number.isFinite(parsed)) {
+			return 0;
+		}
+		if (totalPages <= 0) {
+			return 0;
+		}
+		if (parsed < 0) {
+			return totalPages - 1;
+		}
+		if (parsed >= totalPages) {
+			return 0;
+		}
+		return parsed;
+	}
+
+	private parseTagSelection(menu: ItemMenuState, argument: string): string | null {
+		const index = Number.parseInt(argument, 10);
+		if (!Number.isFinite(index) || index <= 0) {
 			return null;
 		}
-		if (!menu.tag) {
-			return tags[0] ?? null;
-		}
-		const index = tags.indexOf(menu.tag);
-		if (index < 0 || index >= tags.length - 1) {
-			return null;
-		}
-		return tags[index + 1] ?? null;
+		const tags = this.collectMenuTags(menu);
+		return tags[index - 1] ?? null;
 	}
 
 	private createSessionMenu(chatId: number, itemId: string, sessionIds: string[]): string {
@@ -964,10 +1045,13 @@ export class TelegramBotRunner {
 				payload.action === "menu_source" ||
 				payload.action === "menu_source_set" ||
 				payload.action === "menu_tag" ||
+				payload.action === "menu_tag_set" ||
+				payload.action === "menu_tag_page" ||
 				payload.action === "menu_sort" ||
 				payload.action === "menu_sort_set" ||
 				payload.action === "menu_back" ||
 				payload.action === "menu_clear" ||
+				payload.action === "menu_prev" ||
 				payload.action === "menu_next"
 			) {
 				const menu = this.getItemMenu(chatId, payload.menuId);
@@ -985,6 +1069,22 @@ export class TelegramBotRunner {
 				if (payload.action === "menu_source") {
 					await this.api.sendMessage(chatId, "Select source filter", {
 						inlineKeyboard: this.buildSourceMenuKeyboard(payload.menuId),
+					});
+					return;
+				}
+				if (payload.action === "menu_tag") {
+					menu.tagPage = 0;
+					const tags = this.collectMenuTags(menu);
+					if (tags.length === 0) {
+						await this.api.sendMessage(chatId, "No tags available for this menu.", {
+							inlineKeyboard: [
+								[{ text: "Back", callbackData: buildCallbackPayload("menu_back", payload.menuId, 0) }],
+							],
+						});
+						return;
+					}
+					await this.api.sendMessage(chatId, "Select tag filter", {
+						inlineKeyboard: this.buildTagMenuKeyboard(payload.menuId, menu),
 					});
 					return;
 				}
@@ -1015,9 +1115,23 @@ export class TelegramBotRunner {
 						menu.page = 0;
 					}
 				}
-				if (payload.action === "menu_tag") {
-					menu.tag = this.nextTagFilter(menu);
+				if (payload.action === "menu_tag_set") {
+					if (payload.argument === "0") {
+						menu.tag = null;
+					} else {
+						menu.tag = this.parseTagSelection(menu, payload.argument);
+					}
 					menu.page = 0;
+					menu.tagPage = 0;
+				}
+				if (payload.action === "menu_tag_page") {
+					const tags = this.collectMenuTags(menu);
+					const totalPages = Math.max(1, Math.ceil(tags.length / 6));
+					menu.tagPage = this.parseTagPage(payload.argument, totalPages);
+					await this.api.sendMessage(chatId, "Select tag filter", {
+						inlineKeyboard: this.buildTagMenuKeyboard(payload.menuId, menu),
+					});
+					return;
 				}
 				if (payload.action === "menu_clear") {
 					menu.time = "all";
@@ -1025,10 +1139,17 @@ export class TelegramBotRunner {
 					menu.tag = null;
 					menu.sort = "newest";
 					menu.page = 0;
+					menu.tagPage = 0;
 				}
-				if (payload.action === "menu_next") {
+				if (payload.action === "menu_prev" || payload.action === "menu_next") {
 					const pageInfo = this.pagedMenuEntries(menu);
-					menu.page = pageInfo.totalPages <= 1 ? 0 : (pageInfo.page + 1) % pageInfo.totalPages;
+					if (pageInfo.totalPages <= 1) {
+						menu.page = 0;
+					} else if (payload.action === "menu_next") {
+						menu.page = (pageInfo.page + 1) % pageInfo.totalPages;
+					} else {
+						menu.page = (pageInfo.page - 1 + pageInfo.totalPages) % pageInfo.totalPages;
+					}
 				}
 				const responseText = this.buildDiscoveryMenuText(menu);
 				const keyboard = this.buildDiscoveryMenuKeyboard(payload.menuId, menu);
