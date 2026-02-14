@@ -92,6 +92,7 @@ describe("storage smoke", () => {
 		dialogueRepo.createTurn(turn);
 
 		expect(itemsRepo.findById(item.id)).toEqual(item);
+		expect(itemsRepo.listRecent()).toEqual([item]);
 		expect(artifactsRepo.findById(artifact.id)).toEqual(artifact);
 		expect(artifactsRepo.listByItemId(item.id)).toEqual([artifact]);
 		expect(annotationsRepo.findById(annotation.id)).toEqual(annotation);

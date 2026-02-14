@@ -16,6 +16,7 @@ interface ItemRow {
 export class ItemsRepo {
 	private readonly insertStatement;
 	private readonly selectByIdStatement;
+	private readonly listRecentStatement;
 
 	constructor(private readonly database: DatabaseSync) {
 		this.insertStatement = this.database.prepare(`
@@ -23,6 +24,7 @@ export class ItemsRepo {
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		`);
 		this.selectByIdStatement = this.database.prepare("SELECT * FROM items WHERE id = ?");
+		this.listRecentStatement = this.database.prepare("SELECT * FROM items ORDER BY created_at DESC LIMIT ?");
 	}
 
 	create(item: Item): void {
@@ -44,6 +46,12 @@ export class ItemsRepo {
 			return null;
 		}
 		return mapItemRow(row as unknown as ItemRow);
+	}
+
+	listRecent(limit = 20): Item[] {
+		const normalizedLimit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 20;
+		const rows = this.listRecentStatement.all(normalizedLimit);
+		return rows.map((row) => mapItemRow(row as unknown as ItemRow));
 	}
 }
 

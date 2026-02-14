@@ -1,4 +1,4 @@
-export type ParsedTelegramCommand = ParsedSaveCommand | ParsedAskCommand;
+export type ParsedTelegramCommand = ParsedSaveCommand | ParsedAskCommand | ParsedListCommand;
 
 export interface ParsedSaveCommand {
 	type: "save";
@@ -10,6 +10,10 @@ export interface ParsedAskCommand {
 	type: "ask";
 	itemId: string;
 	question: string;
+}
+
+export interface ParsedListCommand {
+	type: "list";
 }
 
 export interface ParseTelegramCommandError {
@@ -105,6 +109,23 @@ function parseAskCommand(input: string): ParseTelegramCommandResult {
 	};
 }
 
+function parseListCommand(input: string): ParseTelegramCommandResult {
+	const raw = input.trim();
+	const body = raw.slice("/list".length).trim();
+	if (body.length > 0) {
+		return {
+			ok: false,
+			error: { code: "MISSING_ARGUMENTS", message: "Expected: /list" },
+		};
+	}
+	return {
+		ok: true,
+		value: {
+			type: "list",
+		},
+	};
+}
+
 export function parseTelegramCommand(input: string): ParseTelegramCommandResult {
 	const raw = input.trim();
 	if (raw.startsWith("/save")) {
@@ -113,11 +134,14 @@ export function parseTelegramCommand(input: string): ParseTelegramCommandResult 
 	if (raw.startsWith("/ask")) {
 		return parseAskCommand(raw);
 	}
+	if (raw.startsWith("/list")) {
+		return parseListCommand(raw);
+	}
 	return {
 		ok: false,
 		error: {
 			code: "UNSUPPORTED_COMMAND",
-			message: "Only /save and /ask are supported in MVP.",
+			message: "Only /save, /ask, and /list are supported in MVP.",
 		},
 	};
 }

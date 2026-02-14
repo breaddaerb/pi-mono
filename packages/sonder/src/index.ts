@@ -4,8 +4,10 @@ export {
 	type SonderAppPaths,
 	type SonderCommandError,
 	type SonderCommandResult,
+	type SonderListItem,
 	type SonderProcessResult,
 } from "./app/index.js";
+export { runCommandOnce } from "./cli/run-once.js";
 export {
 	type ParsedTelegramCommand,
 	type ParseTelegramCommandError,

@@ -13,7 +13,7 @@ import {
 	DialogueRepo,
 	ItemsRepo,
 } from "../storage/index.js";
-import type { Artifact, Item } from "../types.js";
+import type { Artifact, Item, ItemSourceType } from "../types.js";
 
 export interface SonderAppPaths {
 	rootDir: string;
@@ -26,6 +26,14 @@ export interface SonderAppOptions {
 	responder: AskResponder;
 	persistThinking?: boolean;
 	now?: () => Date;
+}
+
+export interface SonderListItem {
+	id: string;
+	createdAt: string;
+	sourceType: ItemSourceType;
+	originalUrl: string;
+	tags: string[];
 }
 
 export type SonderCommandResult =
@@ -45,6 +53,10 @@ export type SonderCommandResult =
 			assistantTurnId: string;
 			answer: string;
 			citations: string[];
+	  }
+	| {
+			type: "list";
+			items: SonderListItem[];
 	  };
 
 export type SonderCommandError = ParseTelegramCommandError | { code: "RUNTIME_ERROR"; message: string };
@@ -96,6 +108,21 @@ export class SonderApp {
 			if (parsed.value.type === "save") {
 				const result = await this.handleSave(parsed.value.url, parsed.value.tags);
 				return { ok: true, value: result };
+			}
+			if (parsed.value.type === "list") {
+				return {
+					ok: true,
+					value: {
+						type: "list",
+						items: this.itemsRepo.listRecent().map((item) => ({
+							id: item.id,
+							createdAt: item.createdAt,
+							sourceType: item.sourceType,
+							originalUrl: item.originalUrl,
+							tags: item.tags,
+						})),
+					},
+				};
 			}
 
 			const askResult = await this.askService.ask(parsed.value.itemId, parsed.value.question);

@@ -98,6 +98,41 @@ describe("SonderApp", () => {
 		}
 	});
 
+	it("lists saved items via /list", async () => {
+		const server = await withServer((_request, response) => {
+			response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+			response.end("<html><body><h1>Item</h1></body></html>");
+		});
+
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+		});
+
+		try {
+			const saveResult = await app.processCommand(`/save ${server.baseUrl}/article #agents`);
+			expect(saveResult.ok).toBe(true);
+
+			const listResult = await app.processCommand("/list");
+			expect(listResult.ok).toBe(true);
+			if (!listResult.ok || listResult.value.type !== "list") {
+				throw new Error("Expected list result");
+			}
+			expect(listResult.value.items.length).toBe(1);
+			expect(listResult.value.items[0].tags).toEqual(["agents"]);
+		} finally {
+			app.close();
+			await server.close();
+		}
+	});
+
 	it("returns parser errors for unsupported commands", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
 		tempDirs.push(root);

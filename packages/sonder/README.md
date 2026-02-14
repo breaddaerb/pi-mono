@@ -7,6 +7,7 @@ Sonder is a Telegram-first conversational personal knowledge system built on pi-
 - Source scope: public web URL only
 - Save contract: `/save <url> [#tags...]`
 - Ask contract: `/ask <itemId> <question>`
+- List contract: `/list`
 - Snapshot outputs: `snapshot.html + assets`, extracted text, screenshot fallback
 - Annotation types: `highlight`, `underline`, `note`
 - Ask behavior: inline evidence refs in responses by default
@@ -39,10 +40,10 @@ npm run test
 Run specific tests (used in current implementation):
 
 ```bash
-npx tsx ../../node_modules/vitest/dist/cli.js --run test/parse-command.test.ts test/storage-smoke.test.ts test/snapshot-service.test.ts test/ask-service.test.ts test/sonder-app.test.ts
+npx tsx ../../node_modules/vitest/dist/cli.js --run test/parse-command.test.ts test/storage-smoke.test.ts test/snapshot-service.test.ts test/ask-service.test.ts test/sonder-app.test.ts test/cli-run-once.test.ts
 ```
 
-## Run current version (foundation build)
+## Run current version (local command runner)
 
 Build package:
 
@@ -51,14 +52,22 @@ cd packages/sonder
 npm run build
 ```
 
-Run built CLI entrypoint:
+Save a page (writes data + sqlite under `--root`):
 
 ```bash
-node dist/main.js
+node dist/main.js --root ./.sonder-data /save https://lucumr.pocoo.org/2026/2/9/a-language-for-agents '#agents'
 ```
 
-Expected output at current stage:
+List saved items (copy an `itemId`):
 
-```text
-sonder: foundation scaffold ready
+```bash
+node dist/main.js --root ./.sonder-data /list
 ```
+
+Ask an item (replace `<itemId>` with ID from save output):
+
+```bash
+node dist/main.js --root ./.sonder-data /ask <itemId> "what is the main thesis?"
+```
+
+Current CLI uses a stub responder for local end-to-end flow testing.

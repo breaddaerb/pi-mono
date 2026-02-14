@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
-// Sonder runtime entrypoint (MVP foundation phase).
-// Runtime wiring will be added in subsequent milestones.
-console.log("sonder: foundation scaffold ready");
+import { runCommandOnce } from "./cli/run-once.js";
+
+const exitCode = await runCommandOnce(process.argv.slice(2), process.stdout, process.stderr);
+process.exit(exitCode);

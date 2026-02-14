@@ -42,6 +42,22 @@ describe("parseTelegramCommand", () => {
 		expect(result.error.code).toBe("MISSING_ARGUMENTS");
 	});
 
+	it("parses /list", () => {
+		const result = parseTelegramCommand("/list");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected list command to parse");
+		expect(result.value).toEqual({ type: "list" });
+	});
+
+	it("rejects /list with extra args", () => {
+		const result = parseTelegramCommand("/list 10");
+
+		expect(result.ok).toBe(false);
+		if (result.ok) throw new Error("Expected list command to fail");
+		expect(result.error.code).toBe("MISSING_ARGUMENTS");
+	});
+
 	it("rejects unsupported commands", () => {
 		const result = parseTelegramCommand("/open item_123");
 
