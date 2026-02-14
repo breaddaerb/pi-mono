@@ -1,0 +1,80 @@
+export interface Migration {
+	version: number;
+	sql: string;
+}
+
+export const MIGRATIONS: Migration[] = [
+	{
+		version: 1,
+		sql: `
+CREATE TABLE IF NOT EXISTS schema_migrations (
+	version INTEGER PRIMARY KEY,
+	applied_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS items (
+	id TEXT PRIMARY KEY,
+	created_at TEXT NOT NULL,
+	source_type TEXT NOT NULL,
+	original_url TEXT NOT NULL,
+	why_note TEXT,
+	tags_json TEXT NOT NULL,
+	topic TEXT,
+	space TEXT
+);
+
+CREATE TABLE IF NOT EXISTS artifacts (
+	id TEXT PRIMARY KEY,
+	item_id TEXT NOT NULL,
+	kind TEXT NOT NULL,
+	path TEXT NOT NULL,
+	mime_type TEXT NOT NULL,
+	version INTEGER NOT NULL,
+	created_at TEXT NOT NULL,
+	FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS annotations (
+	id TEXT PRIMARY KEY,
+	item_id TEXT NOT NULL,
+	artifact_id TEXT NOT NULL,
+	type TEXT NOT NULL,
+	text TEXT,
+	comment TEXT,
+	color TEXT,
+	tags_json TEXT NOT NULL,
+	anchor TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE,
+	FOREIGN KEY(artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS dialogue_sessions (
+	id TEXT PRIMARY KEY,
+	item_id TEXT NOT NULL,
+	title TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS dialogue_turns (
+	id TEXT PRIMARY KEY,
+	session_id TEXT NOT NULL,
+	role TEXT NOT NULL,
+	content TEXT NOT NULL,
+	model TEXT NOT NULL,
+	provider TEXT NOT NULL,
+	citations_json TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	FOREIGN KEY(session_id) REFERENCES dialogue_sessions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_item_id ON artifacts(item_id);
+CREATE INDEX IF NOT EXISTS idx_annotations_item_id ON annotations(item_id);
+CREATE INDEX IF NOT EXISTS idx_annotations_artifact_id ON annotations(artifact_id);
+CREATE INDEX IF NOT EXISTS idx_dialogue_sessions_item_id ON dialogue_sessions(item_id);
+CREATE INDEX IF NOT EXISTS idx_dialogue_turns_session_id ON dialogue_turns(session_id);
+`,
+	},
+];

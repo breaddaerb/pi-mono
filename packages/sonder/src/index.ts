@@ -3,6 +3,17 @@ export {
 	type ParseTelegramCommandError,
 	parseTelegramCommand,
 } from "./commands/parse-command.js";
+export {
+	AnnotationsRepo,
+	ArtifactsRepo,
+	applyMigrations,
+	type CreateDatabaseOptions,
+	createDatabase,
+	DialogueRepo,
+	getArtifactFilePath,
+	getItemArtifactDirectory,
+	ItemsRepo,
+} from "./storage/index.js";
 export type {
 	Annotation,
 	AnnotationType,

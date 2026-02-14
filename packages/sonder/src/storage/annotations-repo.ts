@@ -1,0 +1,70 @@
+import type { DatabaseSync } from "node:sqlite";
+import type { Annotation } from "../types.js";
+import { parseStringArray, toJsonString } from "./json.js";
+
+interface AnnotationRow {
+	id: string;
+	item_id: string;
+	artifact_id: string;
+	type: string;
+	text: string | null;
+	comment: string | null;
+	color: string | null;
+	tags_json: string;
+	anchor: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export class AnnotationsRepo {
+	private readonly insertStatement;
+	private readonly selectByIdStatement;
+
+	constructor(private readonly database: DatabaseSync) {
+		this.insertStatement = this.database.prepare(`
+			INSERT INTO annotations (id, item_id, artifact_id, type, text, comment, color, tags_json, anchor, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`);
+		this.selectByIdStatement = this.database.prepare("SELECT * FROM annotations WHERE id = ?");
+	}
+
+	create(annotation: Annotation): void {
+		this.insertStatement.run(
+			annotation.id,
+			annotation.itemId,
+			annotation.artifactId,
+			annotation.type,
+			annotation.text,
+			annotation.comment,
+			annotation.color,
+			toJsonString(annotation.tags),
+			annotation.anchor,
+			annotation.createdAt,
+			annotation.updatedAt,
+		);
+	}
+
+	findById(id: string): Annotation | null {
+		const row = this.selectByIdStatement.get(id);
+		if (!row) {
+			return null;
+		}
+		return mapAnnotationRow(row as unknown as AnnotationRow);
+	}
+}
+
+function mapAnnotationRow(row: AnnotationRow): Annotation {
+	return {
+		id: row.id,
+		itemId: row.item_id,
+		artifactId: row.artifact_id,
+		type: row.type as Annotation["type"],
+		text: row.text,
+		comment: row.comment,
+		color: row.color,
+		tags: parseStringArray(row.tags_json),
+		anchor: row.anchor,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
