@@ -45,8 +45,19 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [AGENTS.m
 
 ## Development
 
+### Install dependencies
+
+Run once from the repo root before any build/check/test command:
+
 ```bash
-npm install          # Install all dependencies
+npm install
+```
+
+If you see missing tool errors (for example `biome: command not found`), run `npm install` again in the repo root.
+
+### Common commands
+
+```bash
 npm run build        # Build all packages
 npm run check        # Lint, format, and type check
 ./test.sh            # Run tests (skips LLM-dependent tests without API keys)
