@@ -173,7 +173,7 @@ Priority order:
 - [x] Remove post-annotation iframe reload flicker/scroll jump (seamless update)
 - [ ] Add robust anchor validation/repair hooks (HTML first)
 - [x] Add HTML anchor resolution status hooks in viewer (`anchor`/`fallback`/`unresolved`)
-- [ ] Add annotation tagging/filtering UX (viewer-first)
+- [x] Add annotation tagging/filtering UX (viewer-first)
 
 ### 11.3 Retrieval quality (P3)
 

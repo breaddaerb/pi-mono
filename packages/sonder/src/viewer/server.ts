@@ -127,6 +127,10 @@ function renderViewerPage(itemId: string): string {
       button:hover { background: #f1f4f9; }
       .hint { color: #677188; font-size: 12px; }
       .ann-title { margin: 12px 0 8px 0; font-size: 14px; color: #3c455a; }
+      .filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px 0; }
+      .filter-btn { font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid #d7dbe5; background: #fff; color: #4b556d; cursor: pointer; }
+      .filter-btn.active { background: #eaf2ff; border-color: #c7dbff; color: #274a84; }
+      .filter-summary { font-size: 11px; color: #6c758a; margin-top: 4px; }
       .ann-scroll { overflow: auto; min-height: 0; padding-top: 8px; }
       .annotation { border: 1px solid #e1e6ef; border-left: 4px solid #ddd; border-radius: 10px; padding: 10px; margin-bottom: 10px; cursor: pointer; background: #fff; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
       .annotation:hover { box-shadow: 0 2px 12px rgba(31,36,48,.08); transform: translateY(-1px); }
@@ -165,6 +169,14 @@ function renderViewerPage(itemId: string): string {
           <div class="hint">Selection is captured from the left snapshot frame.</div>
           <hr />
           <h3 class="ann-title">Annotations</h3>
+          <div id="filters" class="filters">
+            <button class="filter-btn active" data-filter-kind="all">All</button>
+            <button class="filter-btn" data-filter-kind="highlight">Highlight</button>
+            <button class="filter-btn" data-filter-kind="underline">Underline</button>
+            <button class="filter-btn" data-filter-kind="comment">With note</button>
+            <button class="filter-btn" data-filter-kind="unresolved">Unresolved</button>
+          </div>
+          <div id="filterSummary" class="filter-summary">Showing all annotations</div>
         </div>
         <div id="ann" class="ann-scroll">Loading...</div>
       </div>
@@ -173,8 +185,12 @@ function renderViewerPage(itemId: string): string {
       const itemId = ${JSON.stringify(itemId)};
       const annRoot = document.getElementById('ann');
       const iframe = document.getElementById('snapshot');
+      const filterRoot = document.getElementById('filters');
+      const filterSummary = document.getElementById('filterSummary');
       let annotationsCache = [];
       let overlayStatuses = {};
+      let activeFilterKind = 'all';
+      let activeTagFilter = null;
 
       function toCssPath(element) {
         if (!element || element.nodeType !== Node.ELEMENT_NODE) {
@@ -291,18 +307,67 @@ function renderViewerPage(itemId: string): string {
         return { label: rawStatus, className: 'annotation-status-pending', unresolved: false };
       }
 
+      function matchesFilter(annotation) {
+        const status = statusMeta(overlayStatuses[annotation.id]);
+        if (activeFilterKind === 'highlight' && annotation.type !== 'highlight') {
+          return false;
+        }
+        if (activeFilterKind === 'underline' && annotation.type !== 'underline') {
+          return false;
+        }
+        if (activeFilterKind === 'comment' && !annotation.comment) {
+          return false;
+        }
+        if (activeFilterKind === 'unresolved' && !status.unresolved) {
+          return false;
+        }
+        if (activeTagFilter && (!Array.isArray(annotation.tags) || !annotation.tags.includes(activeTagFilter))) {
+          return false;
+        }
+        return true;
+      }
+
+      function updateFilterButtons() {
+        if (!filterRoot) {
+          return;
+        }
+        const buttons = filterRoot.querySelectorAll('.filter-btn');
+        for (const button of buttons) {
+          const kind = button.getAttribute('data-filter-kind');
+          button.classList.toggle('active', kind === activeFilterKind);
+        }
+      }
+
+      function updateFilterSummary(total, shown) {
+        if (!filterSummary) {
+          return;
+        }
+        const tagLine = activeTagFilter ? ' • tag #' + activeTagFilter : '';
+        const kindLine = activeFilterKind === 'all' ? 'all' : activeFilterKind;
+        filterSummary.textContent = 'Showing ' + shown + '/' + total + ' (' + kindLine + tagLine + ')';
+      }
+
       async function loadAnnotations() {
         const response = await fetch('/viewer/api/items/' + encodeURIComponent(itemId) + '/annotations');
         const data = await response.json();
         const annotations = Array.isArray(data.annotations) ? data.annotations : [];
         annotationsCache = annotations;
+        const visibleAnnotations = annotations.filter((annotation) => matchesFilter(annotation));
+
+        annRoot.innerHTML = '';
         if (annotations.length === 0) {
           annRoot.textContent = 'No annotations yet.';
+          updateFilterSummary(0, 0);
+          return;
+        }
+        if (visibleAnnotations.length === 0) {
+          annRoot.textContent = 'No annotations match current filters.';
+          updateFilterSummary(annotations.length, 0);
           return;
         }
 
-        annRoot.innerHTML = '';
-        for (const annotation of annotations) {
+        updateFilterSummary(annotations.length, visibleAnnotations.length);
+        for (const annotation of visibleAnnotations) {
           const wrapper = document.createElement('div');
           wrapper.className = 'annotation';
           wrapper.style.borderLeftColor = annotationColor(annotation);
@@ -350,9 +415,14 @@ function renderViewerPage(itemId: string): string {
             const tags = document.createElement('div');
             tags.className = 'annotation-tags';
             for (const tag of annotation.tags) {
-              const chip = document.createElement('span');
+              const chip = document.createElement('button');
               chip.className = 'annotation-tag';
               chip.textContent = '#' + tag;
+              chip.onclick = async (event) => {
+                event.stopPropagation();
+                activeTagFilter = activeTagFilter === tag ? null : tag;
+                await loadAnnotations();
+              };
               tags.appendChild(chip);
             }
             wrapper.appendChild(tags);
@@ -529,6 +599,18 @@ function renderViewerPage(itemId: string): string {
       document.getElementById('btnUnderline').onclick = () => createAnnotation('underline');
       document.getElementById('btnNote').onclick = () => createAnnotation('note');
 
+      if (filterRoot) {
+        const buttons = filterRoot.querySelectorAll('.filter-btn');
+        for (const button of buttons) {
+          button.onclick = async () => {
+            const kind = button.getAttribute('data-filter-kind') || 'all';
+            activeFilterKind = kind;
+            updateFilterButtons();
+            await loadAnnotations();
+          };
+        }
+      }
+
       window.addEventListener('message', (event) => {
         const data = event && event.data;
         if (!data || typeof data !== 'object') {
@@ -543,6 +625,7 @@ function renderViewerPage(itemId: string): string {
         });
       });
 
+      updateFilterButtons();
       loadAnnotations().catch((error) => {
         annRoot.textContent = String(error);
       });
