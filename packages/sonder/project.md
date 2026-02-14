@@ -1,182 +1,149 @@
----
+# Sonder project walkthrough (maintainer ramp-up)
 
-# Sonder – Project Context (Living Brief)
+This file is the fast ramp-up brief for future work on `packages/sonder`.
 
----
+## 1) What Sonder is
 
-This file is for two readers:
-1) you (current maintainer)
-2) future coding agents (future me)
+Sonder is a Telegram-first, item-anchored PKM system.
 
-Goal: make ramp-up fast, with clear current state + next direction.
+Core loop:
+1. capture evidence (`/save`)
+2. enter item context (`Open` / `/open`)
+3. annotate in viewer
+4. continue multi-turn dialogue in Telegram
+5. resume sessions later (`/sessions`, `/history`)
 
----
-
-## 1) Product Definition
-
-Sonder is a **Telegram-first personal knowledge system** built in `pi-mono/packages/sonder`.
-
-Core identity:
-- preserve durable evidence (snapshots, not just links)
-- discuss saved items in multi-turn dialogue
-- keep dialogue trajectory as first-class memory
-- support retrieval over saved knowledge
-
-Sonder is not a generic note app. It is an **item-anchored thinking space**.
-
-## 1.1) North-star (high-level intent)
-
-Sonder exists to create:
-
-> A space where fragments can be unfolded, questioned, linked to past thoughts, reframed, and explored without friction.
-
-Implications:
-- evidence-first, not bookmark-first
-- conversation-first, not static summary-first
-- re-entry into prior dialogue must be effortless
-- retrieval should support re-contextualization, not only lookup
+Design principles:
+- evidence is durable local artifact data
+- annotations are DB records (no snapshot mutation)
+- dialogue trajectory is first-class memory
+- no-ID UX for discovery in Telegram (button-first)
 
 ---
 
-## 2) Current MVP Status (What Already Works)
+## 2) Current implementation status
 
-### Capture
-- `/save <url> [#tags...]`
-- public web URL scope only (MVP)
-- artifacts persisted locally:
-  - `snapshot.html + assets`
-  - extracted text
-  - fallback text artifact when needed
+MVP is implemented.
 
-### Retrieval (keyword MVP)
-- `/find <query> [limit]`
-- keyword ranking over:
-  - URL
-  - tags
-  - annotations (text/comment)
-  - extracted text
-
-### Item dialogue
-- `/open <itemId>` enters item dialogue mode
-- `/open` enters general chat mode
-- non-command text in active mode becomes dialogue turns
-- `/exit`, `/where`, `/sessions <itemId>`, `/resume <sessionId>`, `/history [sessionId]`
-- active mode/session is persisted per chat (restart-safe)
-
-### Annotation viewer (Zotero-inspired MVP)
-- `/open <itemId>` response includes local viewer URL
-- viewer allows selection-based:
-  - highlight
-  - underline
-  - note (comment on selected highlight/underline)
-- annotation list supports edit/delete
-- overlay re-renders on reopen (basic robust matching)
-- sidebar click jumps to/focuses highlight target
-
-### Ask/runtime
-- `/ask <itemId> <question>` works as stateless fallback
-- context priority:
-  1. annotations
-  2. prior dialogue
-  3. extracted text
-- inline evidence refs supported
-- full turns persisted
+Implemented capabilities:
+- URL capture pipeline (`snapshot.html + assets`, extracted text, fallback artifact)
+- SQLite repositories + migrations (items/artifacts/annotations/dialogues/chat-mode-state)
+- Telegram transport with callback menus (`sx:v1:<action>:<menuId>:<arg>`)
+- item/general dialogue modes with restart-safe state restore
+- viewer-first annotation flow (highlight/underline/note, edit/delete, status, repair)
+- `/find` + `/list` button discovery with refinement filters and pagination
+- `/sessions` + `/history` no-ID flows
+- weighted keyword retrieval + reasons + snippets
 
 ---
 
-## 3) MVP Interaction Model (Current)
+## 3) Interaction model (as implemented)
 
-Typical flow:
-1. `/save <url> #tags`
-2. `/find <query>` (optional discovery)
-3. `/open <itemId>` (enter item dialogue + open viewer)
-4. annotate in viewer (highlight/underline/note)
-5. ask in Telegram via normal messages (or `/ask`)
-6. `/history` / `/sessions` / `/resume` to continue threads later
+### Discovery and open
+- `/find <query>` returns indexed rows + `Open` buttons
+- `/list [limit]` returns indexed rows + `Open` buttons
+- refinement buttons: `Time | Source | Tag | Sort | Clear | Prev | Next`
+- `Tag` uses a paged selector panel
 
----
+### Entering item dialogue
+- `Open` button or `/open <itemId>` enters item mode
+- default behavior when opening an item:
+  - resume latest existing session if present
+  - otherwise create a new session
+- explicit session control: `/sessions` -> `Resume` / `New Session`
 
-## 4) Architecture Snapshot
+### Item dialogue and history
+- plain non-command text in item mode is routed to active item session
+- `/history` in item mode opens paged turn history (`Prev | Next | Back`)
+- `/where` shows active mode/session
+- `/exit` exits active mode
 
-### Package
-- `packages/sonder`
-
-### Key modules
-- `src/app/sonder-app.ts` – orchestration + domain operations
-- `src/commands/parse-command.ts` – command parsing
-- `src/transport/telegram.ts` – Telegram mode/state routing
-- `src/viewer/server.ts` – local snapshot/annotation viewer server
-- `src/runtime/*` – ask context + responder logic
-- `src/storage/*` – sqlite repos + migrations
-
-### Storage
-- SQLite + local artifact files
-- per-chat active mode stored in DB (`chat_mode_states`)
+### General chat
+- `/open` (no argument) starts a general-chat session
+- plain text then routes to that general session
 
 ---
 
-## 5) Constraints and Principles
+## 4) Key files and responsibilities
 
-- Telegram is the primary interface for MVP
-- Command + viewer hybrid interaction (not viewer-only)
-- Annotations are DB entities (do not mutate snapshot artifact files)
-- Keep architecture chunk-ready and embedding-ready
-- Optimize for maintainability over speed
-
----
-
-## 6) What Is Still Not Done (Optimization Chapter)
-
-This is the next chapter after MVP realization.
-
-### A) Viewer polish
-- richer visual polish and interaction quality
-- stronger anchor repair/validation for difficult HTML drift
-- better annotation UX details (selection affordances, cards, discoverability)
-
-### B) Retrieval quality
-- improve `/find` relevance with better ranking strategy
-- add metadata filter syntax (beyond simple query)
-- later hybrid retrieval (keyword + vector)
-
-### C) Entry/discovery UX
-- easier entry into desired item/session
-- better open/find handoff ergonomics in Telegram
-
-### D) Reliability/ops
-- queue/backpressure hardening
-- structured telemetry
-- export/retention controls
+- `src/app/sonder-app.ts`
+  - command orchestration
+  - retrieval scoring/snippets
+  - annotation CRUD wiring
+- `src/runtime/ask-service.ts`
+  - session resolution
+  - context build + responder call + turn persistence
+- `src/transport/telegram.ts`
+  - polling loop
+  - mode routing
+  - callback menu state machine
+- `src/viewer/server.ts`
+  - local snapshot viewer
+  - annotation overlay/actions/filter/repair
+- `src/storage/*`
+  - repos and migrations
 
 ---
 
-## 7) Working Rules (Operational)
+## 5) Code review summary (2026-02)
 
-Authoritative project tracking files:
-- `packages/sonder/TODO.md`
-- `docs/sonder-implementation-checklist.md`
+Review scope: app/runtime/transport/storage paths plus tests/docs alignment.
 
-Authoritative usage docs:
-- `packages/sonder/README.md`
+### Strengths
+- Clear separation: transport vs app vs runtime vs storage
+- Good coverage on Telegram flows and app behavior
+- Callback payload contract is stable and explicit
+- Session persistence behavior is deterministic and test-backed
 
-When feature behavior changes, update all three in the same cycle.
+### Non-blocking issues to track
+1. History menu uses monotonic page growth on repeated `Next` at end (clamped when rendered). Low risk, can be bounded for cleaner menu-state behavior.
+2. `/find` reason labels are internal-style (`annotation-tags`, `item-note`). Could be normalized to user-facing labels in Telegram text.
+3. Discovery and history menu maps are memory-resident with TTL cleanup-on-access only. Fine for MVP; periodic cleanup could be added in ops pass.
+4. Retry/backpressure/telemetry are still pending (tracked in Milestone 17).
 
----
-
-## 8) Definition of Success (Current Phase)
-
-For the optimization phase, success means:
-- smoother item entry + continuation
-- better find quality
-- cleaner annotation/viewer UX
-- same stability guarantees as current MVP
+No blocking correctness issues found for current MVP behavior.
 
 ---
 
-Sonder is now in a strong MVP-complete baseline.
-Next chapter is **quality, retrieval precision, and interaction refinement**.
+## 6) Documentation map (source of truth)
+
+- user/developer usage: `packages/sonder/README.md`
+- delivery tracker: `packages/sonder/TODO.md`
+- implementation checklist: `docs/sonder-implementation-checklist.md`
+- this ramp-up brief: `packages/sonder/project.md`
+
+Keep these aligned whenever behavior changes.
 
 ---
 
-**Sonder is not a tool for storing ideas.
-It is a space for entering into them.**
+## 7) Next phase candidates
+
+1. Reliability/ops pass
+   - retry policy
+   - per-chat queue/backpressure
+   - structured logs + export/retention controls
+2. Retrieval UX polish
+   - friendlier reason labels
+   - snippet prioritization tuning
+3. Viewer test hardening
+   - more anchor-repair scenario coverage
+
+---
+
+## 8) Fast local sanity run
+
+From `packages/sonder`:
+
+```bash
+SONDER_TELEGRAM_BOT_TOKEN="..." SONDER_RESPONDER=codex npx tsx src/main.ts --telegram --root ./.sonder-data
+```
+
+In Telegram:
+1. `/save <url> #tag`
+2. `/exit`
+3. `/find <term>` -> tap `Open`
+4. ask plain text
+5. `/sessions`
+6. `/history`
+
+This validates the primary MVP interaction path end-to-end.
