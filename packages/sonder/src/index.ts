@@ -4,6 +4,13 @@ export {
 	parseTelegramCommand,
 } from "./commands/parse-command.js";
 export {
+	type CaptureSnapshotOptions,
+	type CaptureSnapshotResult,
+	captureSnapshot,
+	extractAssetUrls,
+	extractReadableTextFromHtml,
+} from "./snapshot/index.js";
+export {
 	AnnotationsRepo,
 	ArtifactsRepo,
 	applyMigrations,

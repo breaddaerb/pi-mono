@@ -18,6 +18,7 @@ Sonder is a Telegram-first conversational personal knowledge system built on pi-
 
 - Milestone 1 complete: package scaffold, command parsing, baseline types
 - Milestone 2 complete: SQLite storage adapter, migrations, repositories, storage smoke tests
+- Milestone 3 complete: snapshot service (`snapshot.html + assets`), extracted text, text-only fallback
 
 ## Testing
 
@@ -36,7 +37,7 @@ npm run test
 Run specific tests (used in current implementation):
 
 ```bash
-npx tsx ../../node_modules/vitest/dist/cli.js --run test/parse-command.test.ts test/storage-smoke.test.ts
+npx tsx ../../node_modules/vitest/dist/cli.js --run test/parse-command.test.ts test/storage-smoke.test.ts test/snapshot-service.test.ts
 ```
 
 ## Run current version (foundation build)
