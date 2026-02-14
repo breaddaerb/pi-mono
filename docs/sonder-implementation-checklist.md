@@ -181,7 +181,7 @@ Priority order:
 - [x] Add button-driven metadata filter chips for `/find` + `/list` (time/source/tag/sort/clear/next)
 - [x] Use two-step option panels for time/source/sort filter selection
 - [x] Support `/find` without query as browse fallback (`/list` behavior)
-- [ ] Improve keyword-first ranking + snippet quality
+- [x] Improve keyword-first ranking + snippet quality (`/find` weighted scoring + snippets)
 - [x] Defer hybrid retrieval (keyword + vector) for now
 
 ### 11.4 Ops/reliability (P4)

@@ -163,6 +163,7 @@ Entry/discovery UX (P1.1 + P1.2/P1.3 slice currently implemented):
 - `/find` returns index-based results with inline `Open` buttons.
 - `/list [limit]` returns index-based rows with `Open` buttons.
 - `/find` and `/list` include refinement chips: `Time | Source | Tag | Sort | Clear | Next`.
+- `/find` results now include weighted match reasons with short evidence snippets.
 - `/find` without query falls back to browse mode (`/list`).
 - Callback payload contract: `sx:v1:<action>:<menuId>:<arg>`.
 - Internal IDs are hidden from `/find` and `/list` result text.

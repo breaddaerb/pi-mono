@@ -133,7 +133,7 @@ describe("SonderApp", () => {
 		}
 	});
 
-	it("finds saved items by keyword across url tags annotations and content", async () => {
+	it("finds saved items with weighted keyword ranking and snippets", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
 		tempDirs.push(root);
 		const app = new SonderApp({
@@ -175,14 +175,39 @@ describe("SonderApp", () => {
 			tags: ["memory"],
 		});
 
+		app.itemsRepo.create({
+			id: "item_find_2",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com/memory-overview",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		const extractedPath2 = join(root, "find-extracted-2.txt");
+		writeFileSync(extractedPath2, "brief notes unrelated", "utf8");
+		app.artifactsRepo.create({
+			id: "art_find_2",
+			itemId: "item_find_2",
+			kind: "extracted-text",
+			path: extractedPath2,
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
 		const findResult = await app.processCommand("/find memory 10");
 		expect(findResult.ok).toBe(true);
 		if (!findResult.ok || findResult.value.type !== "find") {
 			throw new Error("Expected find result");
 		}
-		expect(findResult.value.items.length).toBeGreaterThan(0);
+		expect(findResult.value.items.length).toBeGreaterThan(1);
 		expect(findResult.value.items[0].id).toBe("item_find_1");
-		expect(findResult.value.items[0].reasons).toContain("annotations");
+		expect(findResult.value.items[0].reasons).toEqual(expect.arrayContaining(["annotations", "annotation-tags"]));
+		expect(findResult.value.items[0].snippets.length).toBeGreaterThan(0);
+		expect(findResult.value.items[0].snippets.join(" ").toLowerCase()).toContain("memory");
+		expect(findResult.value.items[0].score).toBeGreaterThan(findResult.value.items[1].score);
 
 		app.close();
 	});

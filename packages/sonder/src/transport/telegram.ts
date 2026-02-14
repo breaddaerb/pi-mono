@@ -268,6 +268,7 @@ interface ItemMenuEntry {
 	originalUrl: string;
 	tags: string[];
 	reasons: string[];
+	snippets: string[];
 }
 
 interface ItemMenuState {
@@ -456,7 +457,8 @@ function formatCommandResult(result: Awaited<ReturnType<SonderApp["processComman
 		}
 		const lines = result.value.items.map((item, index) => {
 			const tags = item.tags.length > 0 ? ` ${item.tags.map((tag) => `#${tag}`).join(" ")}` : "";
-			return `${index + 1}. ${truncateMiddle(item.originalUrl, 100)}${tags}\n   reasons: ${item.reasons.join(", ")}`;
+			const snippetLine = item.snippets.length > 0 ? `\n   match: ${truncateMiddle(item.snippets[0], 120)}` : "";
+			return `${index + 1}. ${truncateMiddle(item.originalUrl, 100)}${tags}\n   reasons: ${item.reasons.join(", ")}${snippetLine}`;
 		});
 		return `🔎 Found ${result.value.items.length} results for: ${result.value.query}\n\n${lines.join("\n\n")}`;
 	}
@@ -686,7 +688,11 @@ export class TelegramBotRunner {
 			const tags = entry.tags.length > 0 ? ` ${entry.tags.map((tag) => `#${tag}`).join(" ")}` : "";
 			const reasonLine =
 				menu.kind === "find" && entry.reasons.length > 0 ? `\n   reasons: ${entry.reasons.join(", ")}` : "";
-			return `${index + 1}. ${truncateMiddle(entry.originalUrl, 96)}${tags}\n   ${entry.sourceType} · ${entry.createdAt}${reasonLine}`;
+			const snippetLine =
+				menu.kind === "find" && entry.snippets.length > 0
+					? `\n   match: ${truncateMiddle(entry.snippets[0], 120)}`
+					: "";
+			return `${index + 1}. ${truncateMiddle(entry.originalUrl, 96)}${tags}\n   ${entry.sourceType} · ${entry.createdAt}${reasonLine}${snippetLine}`;
 		});
 		const filterSummary = `Filters: time=${menu.time} source=${menu.source} tag=${menu.tag ?? "any"} sort=${menu.sort}`;
 		return `${title} (${paged.total}) [page ${paged.page + 1}/${paged.totalPages}]\n${filterSummary}\n\n${rows.join("\n\n")}`;
@@ -1212,6 +1218,7 @@ export class TelegramBotRunner {
 						return [];
 					}
 					const reasons = menuKind === "find" && "reasons" in item ? item.reasons : [];
+					const snippets = menuKind === "find" && "snippets" in item ? item.snippets : [];
 					return [
 						{
 							id: item.id,
@@ -1220,6 +1227,7 @@ export class TelegramBotRunner {
 							originalUrl: details.originalUrl,
 							tags: details.tags,
 							reasons,
+							snippets,
 						},
 					];
 				});

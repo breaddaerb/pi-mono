@@ -108,6 +108,8 @@ describe("TelegramBotRunner", () => {
 		expect(api.sent).toHaveLength(1);
 		expect(api.sent[0].text).toContain("🔎 Find: language");
 		expect(api.sent[0].text).toContain("Filters: time=all");
+		expect(api.sent[0].text).toContain("reasons:");
+		expect(api.sent[0].text).toContain("match:");
 		expect(api.sent[0].text).not.toContain("item_find");
 		expect(api.sent[0].inlineKeyboard?.[0]?.[0]?.text).toBe("1 Open");
 		expect(api.sent[0].inlineKeyboard?.[1]?.[0]?.text).toContain("Time:");
