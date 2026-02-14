@@ -171,8 +171,9 @@ Priority order:
 - [x] Improve annotation card ergonomics + active-selection feedback in sidebar
 - [x] Keep annotation-list scrolling isolated below the top action bar (no visual overlap)
 - [x] Remove post-annotation iframe reload flicker/scroll jump (seamless update)
-- [ ] Add robust anchor validation/repair hooks (HTML first)
+- [x] Add robust anchor validation/repair hooks (HTML first)
 - [x] Add HTML anchor resolution status hooks in viewer (`anchor`/`fallback`/`unresolved`)
+- [x] Add manual `Repair anchor` action for fallback/unresolved annotations
 - [x] Add annotation tagging/filtering UX (viewer-first)
 
 ### 11.3 Retrieval quality (P3)

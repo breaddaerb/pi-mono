@@ -80,6 +80,7 @@ describe("viewer server", () => {
 			expect(page).toContain('class="ann-scroll"');
 			expect(page).toContain('data-filter-kind="highlight"');
 			expect(page).toContain('data-filter-kind="unresolved"');
+			expect(page).toContain("Repair anchor");
 
 			const snapshotResponse = await fetch(`${viewer.baseUrl}/viewer/items/item_view/snapshot`);
 			expect(snapshotResponse.status).toBe(200);

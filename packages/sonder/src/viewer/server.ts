@@ -436,6 +436,16 @@ function renderViewerPage(itemId: string): string {
           const actions = document.createElement('div');
           actions.className = 'annotation-actions';
 
+          if (meta.unresolved || meta.label === 'fallback') {
+            const repair = document.createElement('button');
+            repair.textContent = 'Repair anchor';
+            repair.onclick = async (event) => {
+              event.stopPropagation();
+              await repairAnnotationAnchor(annotation);
+            };
+            actions.appendChild(repair);
+          }
+
           const edit = document.createElement('button');
           edit.textContent = 'Edit';
           edit.onclick = (event) => {
@@ -458,6 +468,139 @@ function renderViewerPage(itemId: string): string {
 
           annRoot.appendChild(wrapper);
         }
+      }
+
+      function parseAnchorJson(anchor) {
+        if (typeof anchor !== 'string') {
+          return null;
+        }
+        try {
+          return JSON.parse(anchor);
+        } catch {
+          return null;
+        }
+      }
+
+      function findRangeAcrossTextNodesInDocument(doc, targetText) {
+        if (!doc || typeof targetText !== 'string' || targetText.length === 0) {
+          return null;
+        }
+        const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+        const segments = [];
+        let fullText = '';
+        let node;
+        while ((node = walker.nextNode())) {
+          const value = node.nodeValue || '';
+          if (!value) {
+            continue;
+          }
+          const start = fullText.length;
+          fullText += value;
+          const end = fullText.length;
+          segments.push({ node, start, end });
+        }
+        const index = fullText.indexOf(targetText);
+        if (index < 0) {
+          return null;
+        }
+        const rangeStart = index;
+        const rangeEnd = index + targetText.length;
+
+        function locate(offset) {
+          for (const segment of segments) {
+            if (offset >= segment.start && offset <= segment.end) {
+              return {
+                node: segment.node,
+                offset: Math.max(0, Math.min(offset - segment.start, (segment.node.nodeValue || '').length)),
+              };
+            }
+          }
+          return null;
+        }
+
+        const startPosition = locate(rangeStart);
+        const endPosition = locate(rangeEnd);
+        if (!startPosition || !endPosition) {
+          return null;
+        }
+        const range = doc.createRange();
+        range.setStart(startPosition.node, startPosition.offset);
+        range.setEnd(endPosition.node, endPosition.offset);
+        return String(range).trim().length > 0 ? range : null;
+      }
+
+      function buildAnchorFromRange(doc, range, exactText) {
+        const startElement = range.startContainer.nodeType === Node.TEXT_NODE
+          ? range.startContainer.parentElement
+          : range.startContainer;
+        const endElement = range.endContainer.nodeType === Node.TEXT_NODE
+          ? range.endContainer.parentElement
+          : range.endContainer;
+        const bodyText = (doc.body?.innerText || '').replace(/s+/g, ' ').trim();
+        const normalizedText = String(exactText || '').replace(/s+/g, ' ').trim();
+        const start = normalizedText ? bodyText.indexOf(normalizedText) : -1;
+        const end = start >= 0 ? start + normalizedText.length : -1;
+        return {
+          kind: 'html-quote-v1',
+          exact: normalizedText,
+          prefix: start > 0 ? bodyText.slice(Math.max(0, start - 32), start) : '',
+          suffix: end >= 0 ? bodyText.slice(end, Math.min(bodyText.length, end + 32)) : '',
+          start,
+          end,
+          selector: toCssPath(startElement),
+          startSelector: toCssPath(startElement),
+          endSelector: toCssPath(endElement),
+          startNodePath: toNodePath(doc.body, range.startContainer),
+          endNodePath: toNodePath(doc.body, range.endContainer),
+          startOffset: range.startOffset,
+          endOffset: range.endOffset,
+          rangeStartOffset: range.startOffset,
+          rangeEndOffset: range.endOffset,
+          version: 1,
+        };
+      }
+
+      async function repairAnnotationAnchor(annotation) {
+        const doc = iframe?.contentWindow?.document;
+        if (!doc) {
+          return;
+        }
+        const parsed = parseAnchorJson(annotation.anchor);
+        const candidates = [annotation.text, parsed?.exact]
+          .filter((value) => typeof value === 'string')
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0);
+
+        let repairedRange = null;
+        let matchedText = null;
+        for (const candidate of candidates) {
+          const range = findRangeAcrossTextNodesInDocument(doc, candidate);
+          if (range) {
+            repairedRange = range;
+            matchedText = candidate;
+            break;
+          }
+        }
+
+        if (!repairedRange || !matchedText) {
+          window.alert('Could not repair anchor from current snapshot text.');
+          return;
+        }
+
+        const nextAnchor = buildAnchorFromRange(doc, repairedRange, matchedText);
+        const response = await fetch('/viewer/api/annotations/' + encodeURIComponent(annotation.id), {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ anchor: JSON.stringify(nextAnchor) }),
+        });
+        if (!response.ok) {
+          const content = await response.text();
+          window.alert(content || 'Failed to repair anchor');
+          return;
+        }
+
+        await loadAnnotations();
+        refreshSnapshot();
       }
 
       function getSelectionInfo() {
