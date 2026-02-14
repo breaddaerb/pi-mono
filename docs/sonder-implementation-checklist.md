@@ -55,8 +55,8 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
   - [x] `/ann list <itemId>`
   - [x] `/ann del <annotationId>`
 - [ ] Implement primary Zotero-like in-snapshot annotation UX:
-  - [ ] `/open <itemId>` viewer entry
-  - [ ] selection -> highlight/underline/note actions
+  - [x] `/open <itemId>` viewer entry
+  - [x] selection -> highlight/underline/note actions (viewer API + basic UI)
   - [ ] overlay rendering on reopen
 - [ ] Define robust anchors:
   - [ ] PDF: page + rect/path geometry
@@ -92,7 +92,7 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 - [ ] Embedding generation (item-level MVP)
 - [ ] Hybrid ranking (filter + keyword + vector)
 - [ ] `/open` returns compact item card + key annotations + latest dialogue pointers
-- [ ] `/open` launches local snapshot annotation viewer for direct highlighting/notes
+- [x] `/open` launches local snapshot annotation viewer for direct highlighting/notes
 - [ ] `/open` enters item-anchored dialogue space (or sets active dialogue context)
 
 ## 8) Auth and model management

@@ -61,7 +61,10 @@ export interface SonderAnnotationItem {
 	artifactId: string;
 	type: Annotation["type"];
 	text: string | null;
+	comment: string | null;
+	color: string | null;
 	tags: string[];
+	anchor: string;
 	createdAt: string;
 }
 
@@ -155,6 +158,45 @@ export class SonderApp {
 			createdAt: session.createdAt,
 			title: session.title,
 		}));
+	}
+
+	createAnnotation(input: {
+		itemId: string;
+		type: Annotation["type"];
+		text: string | null;
+		comment?: string | null;
+		color?: string | null;
+		tags?: string[];
+		anchor?: string;
+	}): SonderAnnotationItem {
+		this.ensureItemExists(input.itemId);
+		const annotationId = randomUUID();
+		const now = (this.options.now ?? (() => new Date()))().toISOString();
+		const artifactId = this.selectAnnotationArtifactId(input.itemId);
+		const annotation: Annotation = {
+			id: annotationId,
+			itemId: input.itemId,
+			artifactId,
+			type: input.type,
+			text: input.text,
+			comment: input.comment ?? null,
+			color: input.color ?? null,
+			tags: input.tags ?? [],
+			anchor: input.anchor ?? `item://${input.itemId}#${input.type}:${annotationId}`,
+			createdAt: now,
+			updatedAt: now,
+		};
+		this.annotationsRepo.create(annotation);
+		return this.toAnnotationItem(annotation);
+	}
+
+	listAnnotations(itemId: string): SonderAnnotationItem[] {
+		this.ensureItemExists(itemId);
+		return this.annotationsRepo.listByItemId(itemId).map((annotation) => this.toAnnotationItem(annotation));
+	}
+
+	deleteAnnotation(annotationId: string): boolean {
+		return this.annotationsRepo.deleteById(annotationId);
 	}
 
 	resumeItemDialogue(sessionId: string): SonderDialogueSessionInfo {
@@ -257,7 +299,13 @@ export class SonderApp {
 				};
 			}
 			if (parsed.value.type === "annotate") {
-				const annotation = this.handleAnnotate(parsed.value.itemId, parsed.value.text, parsed.value.tags);
+				const annotation = this.createAnnotation({
+					itemId: parsed.value.itemId,
+					type: "note",
+					text: parsed.value.text,
+					tags: parsed.value.tags,
+					anchor: undefined,
+				});
 				return {
 					ok: true,
 					value: {
@@ -267,10 +315,7 @@ export class SonderApp {
 				};
 			}
 			if (parsed.value.type === "ann-list") {
-				this.ensureItemExists(parsed.value.itemId);
-				const annotations = this.annotationsRepo
-					.listByItemId(parsed.value.itemId)
-					.map((annotation) => this.toAnnotationItem(annotation));
+				const annotations = this.listAnnotations(parsed.value.itemId);
 				return {
 					ok: true,
 					value: {
@@ -281,7 +326,7 @@ export class SonderApp {
 				};
 			}
 			if (parsed.value.type === "ann-del") {
-				const deleted = this.annotationsRepo.deleteById(parsed.value.annotationId);
+				const deleted = this.deleteAnnotation(parsed.value.annotationId);
 				if (!deleted) {
 					throw new Error(`Annotation not found: ${parsed.value.annotationId}`);
 				}
@@ -380,28 +425,6 @@ export class SonderApp {
 		};
 	}
 
-	private handleAnnotate(itemId: string, text: string, tags: string[]): SonderAnnotationItem {
-		this.ensureItemExists(itemId);
-		const annotationId = randomUUID();
-		const now = (this.options.now ?? (() => new Date()))().toISOString();
-		const artifactId = this.selectAnnotationArtifactId(itemId);
-		const annotation: Annotation = {
-			id: annotationId,
-			itemId,
-			artifactId,
-			type: "note",
-			text,
-			comment: null,
-			color: null,
-			tags,
-			anchor: `item://${itemId}#note:${annotationId}`,
-			createdAt: now,
-			updatedAt: now,
-		};
-		this.annotationsRepo.create(annotation);
-		return this.toAnnotationItem(annotation);
-	}
-
 	private selectAnnotationArtifactId(itemId: string): string {
 		const artifacts = this.artifactsRepo.listByItemId(itemId);
 		if (artifacts.length === 0) {
@@ -432,7 +455,10 @@ export class SonderApp {
 			artifactId: annotation.artifactId,
 			type: annotation.type,
 			text: annotation.text,
+			comment: annotation.comment,
+			color: annotation.color,
 			tags: annotation.tags,
+			anchor: annotation.anchor,
 			createdAt: annotation.createdAt,
 		};
 	}
