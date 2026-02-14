@@ -163,7 +163,7 @@ Priority order:
 - [x] Make `/sessions` context-first in Telegram UX (primary path: active item -> `/sessions`)
 - [x] Deprecate `/ask` in Telegram UX and guide users to item-mode plain-text asks
 - [x] Add end-to-end tests for discover (`/find` + `/list`) -> enter -> resume -> history -> exit flows
-- [ ] Update README to make button/context flow the primary UX
+- [x] Update README to make button/context flow the primary UX
 
 ### 11.2 Viewer polish (P2)
 

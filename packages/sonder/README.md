@@ -11,7 +11,7 @@ Sonder is a Telegram-first conversational personal knowledge system built on pi-
 - Find contract: `/find <query> [limit]`
 - Annotation contracts: `/annotate <itemId> <text> [#tags...]`, `/ann list <itemId>`, `/ann del <annotationId>`
 - Viewer annotation actions: select text then `highlight | underline | note`, with edit/delete in sidebar
-- Dialogue mode contracts: `/open [itemId]`, `/where`, `/exit`, `/sessions <itemId>`, `/resume <sessionId>`
+- Dialogue mode contracts: `/open [itemId]`, `/where`, `/exit`, `/sessions` (context-first), `/resume <sessionId>` (compatibility)
 - Snapshot outputs: `snapshot.html + assets`, extracted text, screenshot fallback
 - Annotation types: `highlight`, `underline`, `note`
 - Ask behavior: inline evidence refs in responses by default
@@ -136,17 +136,26 @@ Telegram long-polling mode (MVP skeleton):
 SONDER_TELEGRAM_BOT_TOKEN="<bot-token>" SONDER_RESPONDER=codex npx tsx src/main.ts --telegram --root ./.sonder-data
 ```
 
-Dialogue usage in Telegram:
+Primary Telegram command surface (open-first):
 
 ```text
-/open <itemId>      # enter item dialogue mode
-/open               # enter general chat mode
-/where              # show active mode
-/exit               # leave active mode
-/sessions         # list sessions for current active item
-/resume <sessionId> # resume item session
-/history [sessionId] # show recent turns (active or explicit session)
-/find <query> [limit] # keyword retrieval over items/annotations/content
+/save <url> [#tags...]
+/find <query> [limit]
+/list [limit]
+/open [itemId]
+/sessions
+/history
+/where
+/exit
+/help
+```
+
+Compatibility commands (secondary):
+
+```text
+/ask <itemId> <question>  # deprecated in Telegram UX
+/resume <sessionId>
+/history <sessionId>
 ```
 
 Entry/discovery UX (P1.1 + P1.2/P1.3 slice currently implemented):
@@ -159,7 +168,7 @@ Entry/discovery UX (P1.1 + P1.2/P1.3 slice currently implemented):
 - After `/save`, Telegram automatically enters item dialogue mode for the new item.
 - Item-mode entry replies now include action buttons: `Open Viewer | Exit`.
 - Session summary is shown directly in the item-mode card (active turns + recent sessions count + recent activity datetime).
-- `/sessions [itemId]` now returns indexed `Resume` buttons plus `New Session`.
+- `/sessions` now returns indexed `Resume` buttons plus `New Session` for the active item.
 - `/history` in item mode now includes pagination buttons (`Prev | Next | Back`).
 - Contextual plain-text replies include a compact context banner (item/general).
 
