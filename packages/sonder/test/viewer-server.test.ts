@@ -75,7 +75,9 @@ describe("viewer server", () => {
 
 			const snapshotResponse = await fetch(`${viewer.baseUrl}/viewer/items/item_view/snapshot`);
 			expect(snapshotResponse.status).toBe(200);
-			expect(await snapshotResponse.text()).toContain("sonder-overlay-script");
+			const snapshotHtml = await snapshotResponse.text();
+			expect(snapshotHtml).toContain("sonder-overlay-script");
+			expect(snapshotHtml).toContain("findRangeAcrossTextNodes");
 
 			const createResponse = await fetch(`${viewer.baseUrl}/viewer/api/items/item_view/annotations`, {
 				method: "POST",

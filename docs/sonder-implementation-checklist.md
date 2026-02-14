@@ -127,3 +127,56 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 - [x] Active dialogue mode/session survives process restart (per-chat persisted state)
 - [ ] `/find` returns relevant items by metadata + semantic intent
 - [x] Codex/OpenAI-only model path works end-to-end
+
+## 11) Post-MVP optimization order (agreed)
+
+Priority order:
+1. Entry discovery UX
+2. Viewer polish
+3. Retrieval quality
+4. Ops/reliability
+
+### 11.1 Entry discovery UX (P1)
+
+#### P1.1 Callback foundation + `/find` buttons
+
+- [x] Add Telegram inline keyboard callback routing contract (`sx:v1:<action>:<menuId>:<arg>`)
+- [x] Add ephemeral menu state per chat for index -> internal ID/session mapping
+- [x] Redesign `/find <query>` reply to index list + `Open/Ask` buttons (no ID exposure)
+- [x] Add stale callback handling (expired menu -> recovery hint)
+
+#### P1.2 `/open` picker + contextual item mode
+
+- [ ] Redesign `/open` (no arg) to recent-item picker with `Open` buttons
+- [ ] Enter item mode from buttons; plain text routes to active item session
+- [x] After `/save`, auto-enter item mode for the saved item (default continuity)
+- [ ] Add item action panel (`Ask | Sessions | Add Note | Exit`, optional `Open Viewer`)
+- [ ] Add compact context banner in contextual replies
+
+#### P1.3 Sessions/history no-ID flow
+
+- [ ] Redesign sessions listing to indexed `Resume` buttons + `New Session`
+- [ ] Add button-driven history pagination (`Prev/Next/Back`) without IDs
+- [x] Extend `/list [limit]` to include indexed `Open/Ask` inline buttons (same model as `/find`)
+- [ ] Keep legacy ID-based commands as compatibility fallback only
+- [ ] Add end-to-end tests for discover (`/find` + `/list`) -> enter -> resume -> history -> exit flows
+- [ ] Update README to make button/context flow the primary UX
+
+### 11.2 Viewer polish (P2)
+
+- [ ] Improve in-viewer visual hierarchy and interaction affordances
+- [ ] Remove post-annotation iframe reload flicker/scroll jump (seamless update)
+- [ ] Add robust anchor validation/repair hooks (HTML first)
+- [ ] Add annotation tagging/filtering UX (viewer-first)
+
+### 11.3 Retrieval quality (P3)
+
+- [ ] Add metadata filters (source/time/tags/topic/space)
+- [ ] Improve ranking strategy + snippet quality
+- [ ] Add optional hybrid retrieval (keyword + vector)
+
+### 11.4 Ops/reliability (P4)
+
+- [ ] Add retry policy for capture/search/model calls
+- [ ] Add per-chat queue + backpressure controls
+- [ ] Add structured logs/event tracing + export/retention controls

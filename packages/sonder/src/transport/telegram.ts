@@ -12,6 +12,13 @@ interface TelegramGetUpdatesResponse {
 			chat?: { id?: number };
 			text?: string;
 		};
+		callback_query?: {
+			id?: string;
+			data?: string;
+			message?: {
+				chat?: { id?: number };
+			};
+		};
 	}>;
 }
 
@@ -37,13 +44,37 @@ interface TelegramFetchInit {
 
 type TelegramFetch = (url: string, init: TelegramFetchInit) => Promise<Response>;
 
+export interface TelegramInlineButton {
+	text: string;
+	callbackData: string;
+}
+
+export type TelegramInlineKeyboard = TelegramInlineButton[][];
+
+export interface TelegramSendMessageOptions {
+	inlineKeyboard?: TelegramInlineKeyboard;
+}
+
+export type TelegramUpdate =
+	| {
+			updateId: number;
+			type: "message";
+			chatId: number;
+			text: string;
+	  }
+	| {
+			updateId: number;
+			type: "callback";
+			chatId: number;
+			callbackQueryId: string;
+			data: string;
+	  };
+
 export interface TelegramApi {
 	getMe(): Promise<{ id: number; username?: string; firstName?: string }>;
-	getUpdates(
-		offset: number,
-		timeoutSeconds: number,
-	): Promise<Array<{ updateId: number; chatId: number; text: string }>>;
-	sendMessage(chatId: number, text: string): Promise<void>;
+	getUpdates(offset: number, timeoutSeconds: number): Promise<TelegramUpdate[]>;
+	sendMessage(chatId: number, text: string, options?: TelegramSendMessageOptions): Promise<void>;
+	answerCallbackQuery(callbackQueryId: string): Promise<void>;
 }
 
 export interface TelegramRunnerOptions {
@@ -98,10 +129,7 @@ export class TelegramHttpApi implements TelegramApi {
 		};
 	}
 
-	async getUpdates(
-		offset: number,
-		timeoutSeconds: number,
-	): Promise<Array<{ updateId: number; chatId: number; text: string }>> {
+	async getUpdates(offset: number, timeoutSeconds: number): Promise<TelegramUpdate[]> {
 		const response = await this.fetchImpl(
 			`${this.baseUrl}/getUpdates`,
 			this.buildRequest({ offset, timeout: timeoutSeconds }),
@@ -114,23 +142,43 @@ export class TelegramHttpApi implements TelegramApi {
 			throw new Error("Telegram getUpdates returned ok=false");
 		}
 
-		const updates: Array<{ updateId: number; chatId: number; text: string }> = [];
+		const updates: TelegramUpdate[] = [];
 		for (const update of payload.result) {
 			const text = update.message?.text;
 			const chatId = update.message?.chat?.id;
-			if (typeof text !== "string" || typeof chatId !== "number") {
+			if (typeof text === "string" && typeof chatId === "number") {
+				updates.push({ updateId: update.update_id, type: "message", chatId, text });
 				continue;
 			}
-			updates.push({ updateId: update.update_id, chatId, text });
+
+			const callbackId = update.callback_query?.id;
+			const callbackData = update.callback_query?.data;
+			const callbackChatId = update.callback_query?.message?.chat?.id;
+			if (typeof callbackId === "string" && typeof callbackData === "string" && typeof callbackChatId === "number") {
+				updates.push({
+					updateId: update.update_id,
+					type: "callback",
+					chatId: callbackChatId,
+					callbackQueryId: callbackId,
+					data: callbackData,
+				});
+			}
 		}
 
 		return updates;
 	}
 
-	async sendMessage(chatId: number, text: string): Promise<void> {
+	async sendMessage(chatId: number, text: string, options?: TelegramSendMessageOptions): Promise<void> {
+		const inlineKeyboard = options?.inlineKeyboard?.map((row) =>
+			row.map((button) => ({ text: button.text, callback_data: button.callbackData })),
+		);
 		const response = await this.fetchImpl(
 			`${this.baseUrl}/sendMessage`,
-			this.buildRequest({ chat_id: chatId, text }),
+			this.buildRequest({
+				chat_id: chatId,
+				text,
+				reply_markup: inlineKeyboard ? { inline_keyboard: inlineKeyboard } : undefined,
+			}),
 		);
 		if (!response.ok) {
 			throw new Error(`Telegram sendMessage failed: HTTP ${response.status}`);
@@ -138,6 +186,20 @@ export class TelegramHttpApi implements TelegramApi {
 		const payload = (await response.json()) as TelegramSendMessageResponse;
 		if (!payload.ok) {
 			throw new Error("Telegram sendMessage returned ok=false");
+		}
+	}
+
+	async answerCallbackQuery(callbackQueryId: string): Promise<void> {
+		const response = await this.fetchImpl(
+			`${this.baseUrl}/answerCallbackQuery`,
+			this.buildRequest({ callback_query_id: callbackQueryId }),
+		);
+		if (!response.ok) {
+			throw new Error(`Telegram answerCallbackQuery failed: HTTP ${response.status}`);
+		}
+		const payload = (await response.json()) as TelegramSendMessageResponse;
+		if (!payload.ok) {
+			throw new Error("Telegram answerCallbackQuery returned ok=false");
 		}
 	}
 }
@@ -191,6 +253,26 @@ function splitForTelegram(text: string): string[] {
 	return chunks;
 }
 
+const FIND_MENU_TTL_MS = 15 * 60 * 1000;
+
+type MenuKind = "find" | "list";
+
+interface ItemMenuState {
+	kind: MenuKind;
+	itemIds: string[];
+	createdAtMs: number;
+	expiresAtMs: number;
+}
+
+type CallbackAction = "find_open" | "find_ask" | "list_open" | "list_ask";
+
+interface CallbackPayload {
+	version: "v1";
+	action: CallbackAction;
+	menuId: string;
+	argument: string;
+}
+
 interface ChatModeStateItem {
 	mode: "item";
 	itemId: string;
@@ -239,6 +321,30 @@ function parseModeCommand(text: string): ModeCommand | null {
 	return null;
 }
 
+function parseCallbackPayload(data: string): CallbackPayload | null {
+	const parts = data.split(":");
+	if (parts.length !== 5) {
+		return null;
+	}
+	if (parts[0] !== "sx" || parts[1] !== "v1") {
+		return null;
+	}
+	const action = parts[2];
+	if (action !== "find_open" && action !== "find_ask" && action !== "list_open" && action !== "list_ask") {
+		return null;
+	}
+	return {
+		version: "v1",
+		action,
+		menuId: parts[3],
+		argument: parts[4],
+	};
+}
+
+function buildCallbackPayload(action: CallbackAction, menuId: string, argument: number): string {
+	return `sx:v1:${action}:${menuId}:${argument}`;
+}
+
 function formatCommandResult(result: Awaited<ReturnType<SonderApp["processCommand"]>>): string {
 	if (!result.ok) {
 		return `Error (${result.error.code}): ${result.error.message}`;
@@ -265,9 +371,9 @@ function formatCommandResult(result: Awaited<ReturnType<SonderApp["processComman
 		const lines = result.value.items.map((item, index) => {
 			const tags = item.tags.length > 0 ? ` ${item.tags.map((tag) => `#${tag}`).join(" ")}` : "";
 			const url = truncateMiddle(item.originalUrl, 100);
-			return `${index + 1}. ${item.id}\n   ${url}${tags}`;
+			return `${index + 1}. ${url}${tags}`;
 		});
-		return `Recent items (${result.value.items.length})\n\n${lines.join("\n\n")}`;
+		return `🗂 Recent items (${result.value.items.length})\n\n${lines.join("\n\n")}`;
 	}
 
 	if (result.value.type === "find") {
@@ -276,9 +382,9 @@ function formatCommandResult(result: Awaited<ReturnType<SonderApp["processComman
 		}
 		const lines = result.value.items.map((item, index) => {
 			const tags = item.tags.length > 0 ? ` ${item.tags.map((tag) => `#${tag}`).join(" ")}` : "";
-			return `${index + 1}. ${item.id} (score ${item.score})\n   ${truncateMiddle(item.originalUrl, 100)}${tags}\n   reasons: ${item.reasons.join(", ")}`;
+			return `${index + 1}. ${truncateMiddle(item.originalUrl, 100)}${tags}\n   reasons: ${item.reasons.join(", ")}`;
 		});
-		return `Find results for: ${result.value.query}\n\n${lines.join("\n\n")}`;
+		return `🔎 Found ${result.value.items.length} results for: ${result.value.query}\n\n${lines.join("\n\n")}`;
 	}
 
 	if (result.value.type === "annotate") {
@@ -317,6 +423,7 @@ export class TelegramBotRunner {
 	private readonly getViewerItemUrl?: (itemId: string) => string;
 	private readonly chatModes = new Map<number, ChatModeState>();
 	private readonly chatModeStateRepo: ChatModeStateRepo;
+	private readonly itemMenus = new Map<number, Map<string, ItemMenuState>>();
 
 	constructor(
 		private readonly api: TelegramApi,
@@ -334,7 +441,11 @@ export class TelegramBotRunner {
 		const updates = await this.api.getUpdates(this.offset, this.longPollSeconds);
 		for (const update of updates) {
 			this.offset = Math.max(this.offset, update.updateId + 1);
-			await this.handleMessage(update.chatId, update.text);
+			if (update.type === "message") {
+				await this.handleMessage(update.chatId, update.text);
+				continue;
+			}
+			await this.handleCallback(update.chatId, update.callbackQueryId, update.data);
 		}
 	}
 
@@ -389,6 +500,95 @@ export class TelegramBotRunner {
 		return existed || existedInDb;
 	}
 
+	private createItemMenu(chatId: number, kind: MenuKind, itemIds: string[]): string {
+		const chatMenus = this.itemMenus.get(chatId) ?? new Map<string, ItemMenuState>();
+		const createdAtMs = Date.now();
+		const menuId = randomUUID().slice(0, 8);
+		chatMenus.set(menuId, {
+			kind,
+			itemIds,
+			createdAtMs,
+			expiresAtMs: createdAtMs + FIND_MENU_TTL_MS,
+		});
+		this.itemMenus.set(chatId, chatMenus);
+		return menuId;
+	}
+
+	private getItemMenu(chatId: number, menuId: string): ItemMenuState | null {
+		const chatMenus = this.itemMenus.get(chatId);
+		if (!chatMenus) {
+			return null;
+		}
+		const menu = chatMenus.get(menuId);
+		if (!menu) {
+			return null;
+		}
+		if (Date.now() > menu.expiresAtMs) {
+			chatMenus.delete(menuId);
+			return null;
+		}
+		return menu;
+	}
+
+	private getMenuItemId(menu: ItemMenuState, argument: string): string | null {
+		const index = Number.parseInt(argument, 10);
+		if (!Number.isFinite(index) || index <= 0) {
+			return null;
+		}
+		return menu.itemIds[index - 1] ?? null;
+	}
+
+	private async handleCallback(chatId: number, callbackQueryId: string, data: string): Promise<void> {
+		try {
+			const payload = parseCallbackPayload(data);
+			if (!payload) {
+				await this.api.sendMessage(chatId, "Unsupported action. Use /open or /find again.");
+				return;
+			}
+			const menu = this.getItemMenu(chatId, payload.menuId);
+			if (!menu) {
+				await this.api.sendMessage(chatId, "This menu expired. Use /open or /find again.");
+				return;
+			}
+			const expectedKind: MenuKind = payload.action.startsWith("list_") ? "list" : "find";
+			if (menu.kind !== expectedKind) {
+				await this.api.sendMessage(
+					chatId,
+					"This menu action is no longer valid. Use /open, /list, or /find again.",
+				);
+				return;
+			}
+			const itemId = this.getMenuItemId(menu, payload.argument);
+			if (!itemId) {
+				await this.api.sendMessage(chatId, "Invalid selection. Use /list or /find again.");
+				return;
+			}
+
+			const opened = this.app.openItemDialogue(itemId);
+			this.setChatMode(chatId, {
+				mode: "item",
+				itemId: opened.itemId,
+				sessionId: opened.sessionId,
+			});
+
+			const viewerLine = this.getViewerItemUrl ? `\nViewer: ${this.getViewerItemUrl(opened.itemId)}` : "";
+			const promptLine = payload.action.endsWith("_ask") ? "\nSend your question." : "\nSend messages directly.";
+			await this.api.sendMessage(
+				chatId,
+				`🧠 Item mode opened from search result #${payload.argument}${viewerLine}${promptLine}\n/exit to leave.`,
+			);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			await this.api.sendMessage(chatId, `Error (RUNTIME_ERROR): ${message}`);
+		} finally {
+			try {
+				await this.api.answerCallbackQuery(callbackQueryId);
+			} catch {
+				// Best-effort ack; avoid failing flow on callback ack issues.
+			}
+		}
+	}
+
 	private async handleMessage(chatId: number, text: string): Promise<void> {
 		try {
 			const modeCommand = parseModeCommand(text);
@@ -426,6 +626,49 @@ export class TelegramBotRunner {
 			}
 
 			const result = await this.app.processCommand(text);
+			if (result.ok && result.value.type === "save") {
+				const responseText = formatCommandResult(result);
+				await this.api.sendMessage(chatId, responseText);
+				const opened = this.app.openItemDialogue(result.value.itemId);
+				this.setChatMode(chatId, {
+					mode: "item",
+					itemId: opened.itemId,
+					sessionId: opened.sessionId,
+				});
+				const viewerLine = this.getViewerItemUrl ? `\nViewer: ${this.getViewerItemUrl(opened.itemId)}` : "";
+				await this.api.sendMessage(
+					chatId,
+					`🧠 Item mode opened for saved item${viewerLine}\nSend messages directly. /exit to leave.`,
+				);
+				return;
+			}
+			if (
+				result.ok &&
+				(result.value.type === "find" || result.value.type === "list") &&
+				result.value.items.length > 0
+			) {
+				const menuKind: MenuKind = result.value.type;
+				const menuId = this.createItemMenu(
+					chatId,
+					menuKind,
+					result.value.items.map((item) => item.id),
+				);
+				const responseText = formatCommandResult(result);
+				const actionOpen: CallbackAction = menuKind === "find" ? "find_open" : "list_open";
+				const actionAsk: CallbackAction = menuKind === "find" ? "find_ask" : "list_ask";
+				const inlineKeyboard: TelegramInlineKeyboard = result.value.items.map((_, index) => [
+					{
+						text: `${index + 1} Open`,
+						callbackData: buildCallbackPayload(actionOpen, menuId, index + 1),
+					},
+					{
+						text: `${index + 1} Ask`,
+						callbackData: buildCallbackPayload(actionAsk, menuId, index + 1),
+					},
+				]);
+				await this.api.sendMessage(chatId, responseText, { inlineKeyboard });
+				return;
+			}
 			const responseText = formatCommandResult(result);
 			for (const chunk of splitForTelegram(responseText)) {
 				await this.api.sendMessage(chatId, chunk);

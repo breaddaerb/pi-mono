@@ -149,6 +149,15 @@ Dialogue usage in Telegram:
 /find <query> [limit] # keyword retrieval over items/annotations/content
 ```
 
+Entry/discovery UX (P1.1 + P1.2/P1.3 slice currently implemented):
+
+- `/find` returns index-based results with inline buttons (`Open` / `Ask`).
+- `/list [limit]` also returns index-based rows with `Open` / `Ask` buttons.
+- Callback payload contract: `sx:v1:<action>:<menuId>:<arg>`.
+- Internal IDs are hidden from `/find` and `/list` result text.
+- Expired button actions return recovery guidance (`/open`, `/list`, or `/find` again).
+- After `/save`, Telegram automatically enters item dialogue mode for the new item.
+
 Active dialogue mode is persisted per chat in SQLite, so mode/session can survive process restart.
 
 Session resume flow example:
@@ -193,18 +202,24 @@ Expected in terminal:
 - `[telegram] polling started`
 - `[viewer] started at http://127.0.0.1:4321` (port may differ)
 
-3. In Telegram, save and enter item dialogue mode
+3. In Telegram, save and use discovery buttons (no IDs)
 
 ```text
 /save https://lucumr.pocoo.org/2026/2/9/a-language-for-agents #agents
-/open <itemId>
-/where
+# auto-enters item mode for saved item
+/exit
+/find language agents
+# tap "1 Open" or "1 Ask"
+/list 2
+# tap "1 Open" or "1 Ask"
 ```
 
 Expected:
 
-- `/open <itemId>` returns item/session and a viewer URL
-- `/where` shows active item dialogue mode
+- `/save` auto-enters item mode for the saved item
+- `/find` and `/list` both return index-based rows with inline `Open` / `Ask` buttons
+- result text does not expose internal item IDs
+- tapping a button opens item mode and returns a viewer URL
 
 4. In browser, test viewer annotation flow
 
@@ -219,6 +234,7 @@ Expected:
 ```text
 what is the core thesis?
 how does this relate to language design?
+/where
 /exit
 /open
 hello in general mode
@@ -229,6 +245,7 @@ Expected:
 
 - non-command text while item mode is active routes to that item session
 - answers are non-empty and context-aware
+- `/where` shows active mode/session
 - `/open` (without itemId) enters general chat mode
 - `/exit` leaves active mode
 

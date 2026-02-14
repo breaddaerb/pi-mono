@@ -18,6 +18,8 @@ These rules apply to Sonder implementation work in this repository.
 - Use a dedicated feature branch for Sonder work.
 - Keep changes scoped and organized by feature.
 - Treat each feature as one logical commit.
+- When a new feature is delivered, prepare a commit by default.
+- Always ask for explicit user confirmation immediately before committing.
 - Do not commit unless the user explicitly asks to commit.
 
 ## Testing

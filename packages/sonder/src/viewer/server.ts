@@ -475,6 +475,58 @@ function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
     return null;
   }
 
+  function findRangeAcrossTextNodes(root, target) {
+    if (!root || typeof target !== 'string' || target.length === 0) {
+      return null;
+    }
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const segments = [];
+    let fullText = '';
+    let node;
+    while ((node = walker.nextNode())) {
+      const value = node.nodeValue || '';
+      if (value.length === 0) {
+        continue;
+      }
+      const start = fullText.length;
+      fullText += value;
+      const end = fullText.length;
+      segments.push({ node, start, end });
+    }
+
+    const index = fullText.indexOf(target);
+    if (index < 0) {
+      return null;
+    }
+
+    const rangeStart = index;
+    const rangeEnd = index + target.length;
+
+    function locate(offset) {
+      for (const segment of segments) {
+        if (offset >= segment.start && offset <= segment.end) {
+          return {
+            node: segment.node,
+            offset: Math.max(0, Math.min(offset - segment.start, (segment.node.nodeValue || '').length)),
+          };
+        }
+      }
+      return null;
+    }
+
+    const startPosition = locate(rangeStart);
+    const endPosition = locate(rangeEnd);
+    if (!startPosition || !endPosition) {
+      return null;
+    }
+
+    const range = document.createRange();
+    range.setStart(startPosition.node, startPosition.offset);
+    range.setEnd(endPosition.node, endPosition.offset);
+    return String(range).trim().length > 0 ? range : null;
+  }
+
   function parseAnchor(annotation) {
     if (typeof annotation.anchor !== 'string') {
       return null;
@@ -598,6 +650,12 @@ function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
     const anchor = parseAnchor(annotation);
 
     let range = getTextRangeFromSelector(anchor, text);
+    if (!range) {
+      range = findRangeAcrossTextNodes(document.body, text);
+    }
+    if (!range && anchor && typeof anchor.exact === 'string') {
+      range = findRangeAcrossTextNodes(document.body, anchor.exact);
+    }
     if (!range) {
       const hit = findFirstTextNodeWithValue(document.body, text);
       if (hit) {
