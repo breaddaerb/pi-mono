@@ -1,4 +1,12 @@
 export {
+	SonderApp,
+	type SonderAppOptions,
+	type SonderAppPaths,
+	type SonderCommandError,
+	type SonderCommandResult,
+	type SonderProcessResult,
+} from "./app/index.js";
+export {
 	type ParsedTelegramCommand,
 	type ParseTelegramCommandError,
 	parseTelegramCommand,
