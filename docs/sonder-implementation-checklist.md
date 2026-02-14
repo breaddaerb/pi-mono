@@ -176,11 +176,13 @@ Priority order:
 - [x] Add manual `Repair anchor` action for fallback/unresolved annotations
 - [x] Add annotation tagging/filtering UX (viewer-first)
 
-### 11.3 Retrieval quality (P3)
+### 11.3 Retrieval quality (P3, non-embedding)
 
-- [ ] Add metadata filters (source/time/tags/topic/space)
-- [ ] Improve ranking strategy + snippet quality
-- [ ] Add optional hybrid retrieval (keyword + vector)
+- [x] Add button-driven metadata filter chips for `/find` + `/list` (time/source/tag/sort/clear/next)
+- [x] Use two-step option panels for time/source/sort filter selection
+- [x] Support `/find` without query as browse fallback (`/list` behavior)
+- [ ] Improve keyword-first ranking + snippet quality
+- [x] Defer hybrid retrieval (keyword + vector) for now
 
 ### 11.4 Ops/reliability (P4)
 

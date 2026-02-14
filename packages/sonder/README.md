@@ -162,6 +162,8 @@ Entry/discovery UX (P1.1 + P1.2/P1.3 slice currently implemented):
 
 - `/find` returns index-based results with inline `Open` buttons.
 - `/list [limit]` returns index-based rows with `Open` buttons.
+- `/find` and `/list` include refinement chips: `Time | Source | Tag | Sort | Clear | Next`.
+- `/find` without query falls back to browse mode (`/list`).
 - Callback payload contract: `sx:v1:<action>:<menuId>:<arg>`.
 - Internal IDs are hidden from `/find` and `/list` result text.
 - Expired button actions return recovery guidance (`/open`, `/list`, or `/find` again).
@@ -225,9 +227,11 @@ Expected in terminal:
 # auto-enters item mode for saved item
 /exit
 /find language agents
-# tap "1 Open"
+# tap "Time:*" then choose an option (e.g. "Last 7d"), or tap "Tag:*", then tap "1 Open"
 /list 2
-# tap "1 Open"
+# tap "Source:*" or "Sort:*" and choose option, then tap "1 Open"
+/find
+# falls back to list-style browse
 ```
 
 Expected:
@@ -235,6 +239,8 @@ Expected:
 - `/save` auto-enters item mode for the saved item
 - `/find` returns index-based rows with inline `Open` buttons
 - `/list` returns index-based rows with inline `Open` buttons
+- `/find` + `/list` support refinement chips (`Time/Source/Tag/Sort/Clear/Next`)
+- `/find` without query falls back to list-style browsing
 - In Telegram UX, `/ask` is deprecated; open an item first, then ask in plain text.
 - result text does not expose internal item IDs
 - tapping a button opens item mode and returns a viewer URL

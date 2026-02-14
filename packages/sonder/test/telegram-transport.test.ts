@@ -106,11 +106,71 @@ describe("TelegramBotRunner", () => {
 		await runner.pollOnce();
 
 		expect(api.sent).toHaveLength(1);
-		expect(api.sent[0].text).toContain("🔎 Found 1 results for: language");
+		expect(api.sent[0].text).toContain("🔎 Find: language");
+		expect(api.sent[0].text).toContain("Filters: time=all");
 		expect(api.sent[0].text).not.toContain("item_find");
 		expect(api.sent[0].inlineKeyboard?.[0]?.[0]?.text).toBe("1 Open");
-		expect(api.sent[0].inlineKeyboard?.[0]?.[1]).toBeUndefined();
+		expect(api.sent[0].inlineKeyboard?.[1]?.[0]?.text).toContain("Time:");
+		expect(api.sent[0].inlineKeyboard?.[1]?.[1]?.text).toContain("Source:");
 		expect(api.sent[0].inlineKeyboard?.[0]?.[0]?.callbackData).toMatch(/^sx:v1:find_open:/);
+		app.close();
+	});
+
+	it("supports discovery filter callbacks and find-empty fallback to list", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "stub",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+		app.itemsRepo.create({
+			id: "item_filter",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com/language-filter",
+			whyNote: null,
+			tags: ["agents"],
+			topic: null,
+			space: null,
+		});
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 41, text: "/find" },
+			{ updateId: 2, type: "message", chatId: 41, text: "/find language" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[0].text).toContain("🗂 Recent items");
+		const timeFilterData = api.sent[1].inlineKeyboard?.[1]?.[0]?.callbackData;
+		if (!timeFilterData) {
+			throw new Error("Expected time filter callback data");
+		}
+
+		api.enqueueUpdates([
+			{ updateId: 3, type: "callback", chatId: 41, callbackQueryId: "cb_filter_open", data: timeFilterData },
+		]);
+		await runner.pollOnce();
+
+		expect(api.sent[2].text).toContain("Select time filter");
+		const time7dData = api.sent[2].inlineKeyboard?.[0]?.[1]?.callbackData;
+		if (!time7dData) {
+			throw new Error("Expected 7d callback data");
+		}
+
+		api.enqueueUpdates([
+			{ updateId: 4, type: "callback", chatId: 41, callbackQueryId: "cb_filter_set", data: time7dData },
+		]);
+		await runner.pollOnce();
+
+		expect(api.sent[3].text).toContain("Filters: time=7d");
+		expect(api.answeredCallbackIds).toEqual(expect.arrayContaining(["cb_filter_open", "cb_filter_set"]));
 		app.close();
 	});
 

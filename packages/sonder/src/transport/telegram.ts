@@ -257,9 +257,29 @@ const FIND_MENU_TTL_MS = 15 * 60 * 1000;
 
 type MenuKind = "find" | "list";
 
+type TimeFilter = "all" | "today" | "7d" | "30d" | "year";
+type SourceFilter = "any" | "web";
+type SortFilter = "newest" | "oldest";
+
+interface ItemMenuEntry {
+	id: string;
+	createdAt: string;
+	sourceType: string;
+	originalUrl: string;
+	tags: string[];
+	reasons: string[];
+}
+
 interface ItemMenuState {
 	kind: MenuKind;
-	itemIds: string[];
+	query: string | null;
+	entries: ItemMenuEntry[];
+	page: number;
+	pageSize: number;
+	time: TimeFilter;
+	source: SourceFilter;
+	tag: string | null;
+	sort: SortFilter;
 	createdAtMs: number;
 	expiresAtMs: number;
 }
@@ -282,6 +302,16 @@ interface HistoryMenuState {
 type CallbackAction =
 	| "find_open"
 	| "list_open"
+	| "menu_time"
+	| "menu_time_set"
+	| "menu_source"
+	| "menu_source_set"
+	| "menu_tag"
+	| "menu_sort"
+	| "menu_sort_set"
+	| "menu_back"
+	| "menu_clear"
+	| "menu_next"
 	| "sess_resume"
 	| "sess_new"
 	| "hist_prev"
@@ -357,6 +387,16 @@ function parseCallbackPayload(data: string): CallbackPayload | null {
 	if (
 		action !== "find_open" &&
 		action !== "list_open" &&
+		action !== "menu_time" &&
+		action !== "menu_time_set" &&
+		action !== "menu_source" &&
+		action !== "menu_source_set" &&
+		action !== "menu_tag" &&
+		action !== "menu_sort" &&
+		action !== "menu_sort_set" &&
+		action !== "menu_back" &&
+		action !== "menu_clear" &&
+		action !== "menu_next" &&
 		action !== "sess_resume" &&
 		action !== "sess_new" &&
 		action !== "hist_prev" &&
@@ -536,13 +576,20 @@ export class TelegramBotRunner {
 		return existed || existedInDb;
 	}
 
-	private createItemMenu(chatId: number, kind: MenuKind, itemIds: string[]): string {
+	private createItemMenu(chatId: number, kind: MenuKind, entries: ItemMenuEntry[], query: string | null): string {
 		const chatMenus = this.itemMenus.get(chatId) ?? new Map<string, ItemMenuState>();
 		const createdAtMs = Date.now();
 		const menuId = randomUUID().slice(0, 8);
 		chatMenus.set(menuId, {
 			kind,
-			itemIds,
+			query,
+			entries,
+			page: 0,
+			pageSize: 5,
+			time: "all",
+			source: "any",
+			tag: null,
+			sort: "newest",
 			createdAtMs,
 			expiresAtMs: createdAtMs + FIND_MENU_TTL_MS,
 		});
@@ -566,12 +613,182 @@ export class TelegramBotRunner {
 		return menu;
 	}
 
+	private applyItemMenuFilters(menu: ItemMenuState): ItemMenuEntry[] {
+		const now = Date.now();
+		let filtered = menu.entries.filter((entry) => {
+			if (menu.source !== "any" && entry.sourceType !== menu.source) {
+				return false;
+			}
+			if (menu.tag && !entry.tags.includes(menu.tag)) {
+				return false;
+			}
+			if (menu.time !== "all") {
+				const createdAtMs = Date.parse(entry.createdAt);
+				const maxAgeMs =
+					menu.time === "today"
+						? 24 * 60 * 60 * 1000
+						: menu.time === "7d"
+							? 7 * 24 * 60 * 60 * 1000
+							: menu.time === "30d"
+								? 30 * 24 * 60 * 60 * 1000
+								: 365 * 24 * 60 * 60 * 1000;
+				if (!Number.isFinite(createdAtMs) || now - createdAtMs > maxAgeMs) {
+					return false;
+				}
+			}
+			return true;
+		});
+
+		filtered = [...filtered].sort((left, right) => {
+			return menu.sort === "newest"
+				? right.createdAt.localeCompare(left.createdAt)
+				: left.createdAt.localeCompare(right.createdAt);
+		});
+		return filtered;
+	}
+
+	private pagedMenuEntries(menu: ItemMenuState): {
+		items: ItemMenuEntry[];
+		total: number;
+		page: number;
+		totalPages: number;
+	} {
+		const filtered = this.applyItemMenuFilters(menu);
+		const total = filtered.length;
+		const totalPages = Math.max(1, Math.ceil(total / menu.pageSize));
+		const page = Math.max(0, Math.min(menu.page, totalPages - 1));
+		const start = page * menu.pageSize;
+		return {
+			items: filtered.slice(start, start + menu.pageSize),
+			total,
+			page,
+			totalPages,
+		};
+	}
+
 	private getMenuItemId(menu: ItemMenuState, argument: string): string | null {
 		const index = Number.parseInt(argument, 10);
 		if (!Number.isFinite(index) || index <= 0) {
 			return null;
 		}
-		return menu.itemIds[index - 1] ?? null;
+		const paged = this.pagedMenuEntries(menu);
+		return paged.items[index - 1]?.id ?? null;
+	}
+
+	private buildDiscoveryMenuText(menu: ItemMenuState): string {
+		const paged = this.pagedMenuEntries(menu);
+		if (paged.items.length === 0) {
+			const title = menu.kind === "find" ? `🔎 Find: ${menu.query ?? ""}` : "🗂 Recent items";
+			return `${title}\n\nNo results match current filters.`;
+		}
+		const title = menu.kind === "find" ? `🔎 Find: ${menu.query ?? ""}` : "🗂 Recent items";
+		const rows = paged.items.map((entry, index) => {
+			const tags = entry.tags.length > 0 ? ` ${entry.tags.map((tag) => `#${tag}`).join(" ")}` : "";
+			const reasonLine =
+				menu.kind === "find" && entry.reasons.length > 0 ? `\n   reasons: ${entry.reasons.join(", ")}` : "";
+			return `${index + 1}. ${truncateMiddle(entry.originalUrl, 96)}${tags}\n   ${entry.sourceType} · ${entry.createdAt}${reasonLine}`;
+		});
+		const filterSummary = `Filters: time=${menu.time} source=${menu.source} tag=${menu.tag ?? "any"} sort=${menu.sort}`;
+		return `${title} (${paged.total}) [page ${paged.page + 1}/${paged.totalPages}]\n${filterSummary}\n\n${rows.join("\n\n")}`;
+	}
+
+	private buildDiscoveryMenuKeyboard(menuId: string, menu: ItemMenuState): TelegramInlineKeyboard {
+		const paged = this.pagedMenuEntries(menu);
+		const itemRows: TelegramInlineKeyboard = paged.items.map((_, index) => [
+			{
+				text: `${index + 1} Open`,
+				callbackData: buildCallbackPayload(menu.kind === "find" ? "find_open" : "list_open", menuId, index + 1),
+			},
+		]);
+		const tagLabel = menu.tag ? `Tag:${menu.tag}` : "Tag:any";
+		return [
+			...itemRows,
+			[
+				{ text: `Time:${menu.time}`, callbackData: buildCallbackPayload("menu_time", menuId, 0) },
+				{ text: `Source:${menu.source}`, callbackData: buildCallbackPayload("menu_source", menuId, 0) },
+			],
+			[
+				{ text: tagLabel, callbackData: buildCallbackPayload("menu_tag", menuId, 0) },
+				{ text: `Sort:${menu.sort}`, callbackData: buildCallbackPayload("menu_sort", menuId, 0) },
+			],
+			[
+				{ text: "Clear", callbackData: buildCallbackPayload("menu_clear", menuId, 0) },
+				{ text: "Next", callbackData: buildCallbackPayload("menu_next", menuId, 0) },
+			],
+		];
+	}
+
+	private buildTimeMenuKeyboard(menuId: string): TelegramInlineKeyboard {
+		return [
+			[
+				{ text: "Today", callbackData: buildCallbackPayload("menu_time_set", menuId, 1) },
+				{ text: "Last 7d", callbackData: buildCallbackPayload("menu_time_set", menuId, 2) },
+			],
+			[
+				{ text: "30d", callbackData: buildCallbackPayload("menu_time_set", menuId, 3) },
+				{ text: "This year", callbackData: buildCallbackPayload("menu_time_set", menuId, 4) },
+			],
+			[
+				{ text: "All", callbackData: buildCallbackPayload("menu_time_set", menuId, 0) },
+				{ text: "Back", callbackData: buildCallbackPayload("menu_back", menuId, 0) },
+			],
+		];
+	}
+
+	private buildSourceMenuKeyboard(menuId: string): TelegramInlineKeyboard {
+		return [
+			[
+				{ text: "Any", callbackData: buildCallbackPayload("menu_source_set", menuId, 0) },
+				{ text: "Web", callbackData: buildCallbackPayload("menu_source_set", menuId, 1) },
+			],
+			[{ text: "Back", callbackData: buildCallbackPayload("menu_back", menuId, 0) }],
+		];
+	}
+
+	private buildSortMenuKeyboard(menuId: string): TelegramInlineKeyboard {
+		return [
+			[
+				{ text: "Newest", callbackData: buildCallbackPayload("menu_sort_set", menuId, 0) },
+				{ text: "Oldest", callbackData: buildCallbackPayload("menu_sort_set", menuId, 1) },
+			],
+			[{ text: "Back", callbackData: buildCallbackPayload("menu_back", menuId, 0) }],
+		];
+	}
+
+	private parseTimeFilter(argument: string): TimeFilter | null {
+		if (argument === "0") return "all";
+		if (argument === "1") return "today";
+		if (argument === "2") return "7d";
+		if (argument === "3") return "30d";
+		if (argument === "4") return "year";
+		return null;
+	}
+
+	private parseSourceFilter(argument: string): SourceFilter | null {
+		if (argument === "0") return "any";
+		if (argument === "1") return "web";
+		return null;
+	}
+
+	private parseSortFilter(argument: string): SortFilter | null {
+		if (argument === "0") return "newest";
+		if (argument === "1") return "oldest";
+		return null;
+	}
+
+	private nextTagFilter(menu: ItemMenuState): string | null {
+		const tags = Array.from(new Set(menu.entries.flatMap((entry) => entry.tags))).sort();
+		if (tags.length === 0) {
+			return null;
+		}
+		if (!menu.tag) {
+			return tags[0] ?? null;
+		}
+		const index = tags.indexOf(menu.tag);
+		if (index < 0 || index >= tags.length - 1) {
+			return null;
+		}
+		return tags[index + 1] ?? null;
 	}
 
 	private createSessionMenu(chatId: number, itemId: string, sessionIds: string[]): string {
@@ -735,6 +952,84 @@ export class TelegramBotRunner {
 				return;
 			}
 
+			if (
+				payload.action === "menu_time" ||
+				payload.action === "menu_time_set" ||
+				payload.action === "menu_source" ||
+				payload.action === "menu_source_set" ||
+				payload.action === "menu_tag" ||
+				payload.action === "menu_sort" ||
+				payload.action === "menu_sort_set" ||
+				payload.action === "menu_back" ||
+				payload.action === "menu_clear" ||
+				payload.action === "menu_next"
+			) {
+				const menu = this.getItemMenu(chatId, payload.menuId);
+				if (!menu) {
+					await this.api.sendMessage(chatId, "This menu expired. Use /list or /find again.");
+					return;
+				}
+
+				if (payload.action === "menu_time") {
+					await this.api.sendMessage(chatId, "Select time filter", {
+						inlineKeyboard: this.buildTimeMenuKeyboard(payload.menuId),
+					});
+					return;
+				}
+				if (payload.action === "menu_source") {
+					await this.api.sendMessage(chatId, "Select source filter", {
+						inlineKeyboard: this.buildSourceMenuKeyboard(payload.menuId),
+					});
+					return;
+				}
+				if (payload.action === "menu_sort") {
+					await this.api.sendMessage(chatId, "Select sort order", {
+						inlineKeyboard: this.buildSortMenuKeyboard(payload.menuId),
+					});
+					return;
+				}
+				if (payload.action === "menu_time_set") {
+					const next = this.parseTimeFilter(payload.argument);
+					if (next) {
+						menu.time = next;
+						menu.page = 0;
+					}
+				}
+				if (payload.action === "menu_source_set") {
+					const next = this.parseSourceFilter(payload.argument);
+					if (next) {
+						menu.source = next;
+						menu.page = 0;
+					}
+				}
+				if (payload.action === "menu_sort_set") {
+					const next = this.parseSortFilter(payload.argument);
+					if (next) {
+						menu.sort = next;
+						menu.page = 0;
+					}
+				}
+				if (payload.action === "menu_tag") {
+					menu.tag = this.nextTagFilter(menu);
+					menu.page = 0;
+				}
+				if (payload.action === "menu_clear") {
+					menu.time = "all";
+					menu.source = "any";
+					menu.tag = null;
+					menu.sort = "newest";
+					menu.page = 0;
+				}
+				if (payload.action === "menu_next") {
+					const pageInfo = this.pagedMenuEntries(menu);
+					menu.page = pageInfo.totalPages <= 1 ? 0 : (pageInfo.page + 1) % pageInfo.totalPages;
+				}
+				const responseText = this.buildDiscoveryMenuText(menu);
+				const keyboard = this.buildDiscoveryMenuKeyboard(payload.menuId, menu);
+				await this.api.sendMessage(chatId, responseText, { inlineKeyboard: keyboard });
+				return;
+			}
+
 			if (payload.action === "sess_resume") {
 				const menu = this.getSessionMenu(chatId, payload.menuId);
 				if (!menu) {
@@ -885,7 +1180,9 @@ export class TelegramBotRunner {
 				return;
 			}
 
-			const result = await this.app.processCommand(text);
+			const normalized = text.trim();
+			const commandText = normalized === "/find" ? "/list" : text;
+			const result = await this.app.processCommand(commandText);
 			if (result.ok && result.value.type === "save") {
 				const responseText = formatCommandResult(result);
 				await this.api.sendMessage(chatId, responseText);
@@ -909,19 +1206,36 @@ export class TelegramBotRunner {
 				result.value.items.length > 0
 			) {
 				const menuKind: MenuKind = result.value.type;
-				const menuId = this.createItemMenu(
-					chatId,
-					menuKind,
-					result.value.items.map((item) => item.id),
-				);
-				const responseText = formatCommandResult(result);
-				const actionOpen: CallbackAction = menuKind === "find" ? "find_open" : "list_open";
-				const inlineKeyboard: TelegramInlineKeyboard = result.value.items.map((_, index) => [
-					{
-						text: `${index + 1} Open`,
-						callbackData: buildCallbackPayload(actionOpen, menuId, index + 1),
-					},
-				]);
+				const entries: ItemMenuEntry[] = result.value.items.flatMap((item) => {
+					const details = this.app.itemsRepo.findById(item.id);
+					if (!details) {
+						return [];
+					}
+					const reasons = menuKind === "find" && "reasons" in item ? item.reasons : [];
+					return [
+						{
+							id: item.id,
+							createdAt: details.createdAt,
+							sourceType: String(details.sourceType),
+							originalUrl: details.originalUrl,
+							tags: details.tags,
+							reasons,
+						},
+					];
+				});
+				if (entries.length === 0) {
+					await this.api.sendMessage(chatId, "No items available for display.");
+					return;
+				}
+				const query = result.value.type === "find" ? result.value.query : null;
+				const menuId = this.createItemMenu(chatId, menuKind, entries, query);
+				const menu = this.getItemMenu(chatId, menuId);
+				if (!menu) {
+					await this.api.sendMessage(chatId, "Failed to open discovery menu. Try again.");
+					return;
+				}
+				const responseText = this.buildDiscoveryMenuText(menu);
+				const inlineKeyboard = this.buildDiscoveryMenuKeyboard(menuId, menu);
 				await this.api.sendMessage(chatId, responseText, { inlineKeyboard });
 				return;
 			}
