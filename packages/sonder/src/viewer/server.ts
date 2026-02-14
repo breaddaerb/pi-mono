@@ -26,6 +26,14 @@ interface CreateViewerAnnotationPayload {
 	anchor: string | null;
 }
 
+interface UpdateViewerAnnotationPayload {
+	text?: string | null;
+	comment?: string | null;
+	color?: string | null;
+	tags?: string[];
+	anchor?: string;
+}
+
 function respondJson(response: ServerResponse, status: number, payload: unknown): void {
 	response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
 	response.end(JSON.stringify(payload, null, 2));
@@ -145,11 +153,63 @@ function renderViewerPage(itemId: string): string {
       const itemId = ${JSON.stringify(itemId)};
       const annRoot = document.getElementById('ann');
       const iframe = document.getElementById('snapshot');
+      let annotationsCache = [];
+
+      function toCssPath(element) {
+        if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+          return null;
+        }
+        const segments = [];
+        let current = element;
+        while (current && current.nodeType === Node.ELEMENT_NODE && current.tagName.toLowerCase() !== 'html') {
+          const parent = current.parentElement;
+          if (!parent) {
+            break;
+          }
+          const siblings = Array.from(parent.children).filter((child) => child.tagName === current.tagName);
+          const index = siblings.indexOf(current) + 1;
+          segments.unshift(current.tagName.toLowerCase() + ':nth-of-type(' + index + ')');
+          current = parent;
+        }
+        return segments.length > 0 ? segments.join(' > ') : null;
+      }
+
+      function toNodePath(root, node) {
+        if (!root || !node) {
+          return null;
+        }
+        const path = [];
+        let current = node;
+        while (current && current !== root) {
+          const parent = current.parentNode;
+          if (!parent) {
+            return null;
+          }
+          const index = Array.prototype.indexOf.call(parent.childNodes, current);
+          if (index < 0) {
+            return null;
+          }
+          path.unshift(index);
+          current = parent;
+        }
+        return current === root ? path : null;
+      }
 
       function refreshSnapshot() {
         if (!iframe) {
           return;
         }
+        const frameWindow = iframe.contentWindow;
+        const scrollX = frameWindow ? frameWindow.scrollX : 0;
+        const scrollY = frameWindow ? frameWindow.scrollY : 0;
+
+        iframe.addEventListener('load', () => {
+          const nextWindow = iframe.contentWindow;
+          if (nextWindow) {
+            nextWindow.scrollTo(scrollX, scrollY);
+          }
+        }, { once: true });
+
         iframe.src = '/viewer/items/' + encodeURIComponent(itemId) + '/snapshot?ts=' + Date.now();
       }
 
@@ -157,6 +217,7 @@ function renderViewerPage(itemId: string): string {
         const response = await fetch('/viewer/api/items/' + encodeURIComponent(itemId) + '/annotations');
         const data = await response.json();
         const annotations = Array.isArray(data.annotations) ? data.annotations : [];
+        annotationsCache = annotations;
         if (annotations.length === 0) {
           annRoot.textContent = 'No annotations yet.';
           return;
@@ -174,13 +235,25 @@ function renderViewerPage(itemId: string): string {
 
           const text = document.createElement('div');
           text.className = 'annotation-text';
-          text.textContent = annotation.text || annotation.comment || '(empty)';
+          text.textContent = annotation.text || '(empty)';
           wrapper.appendChild(text);
+
+          if (annotation.comment) {
+            const note = document.createElement('div');
+            note.className = 'annotation-meta';
+            note.textContent = 'Note: ' + annotation.comment;
+            wrapper.appendChild(note);
+          }
 
           const meta = document.createElement('div');
           meta.className = 'annotation-meta';
           meta.textContent = annotation.createdAt;
           wrapper.appendChild(meta);
+
+          const edit = document.createElement('button');
+          edit.textContent = 'Edit';
+          edit.onclick = () => editAnnotation(annotation);
+          wrapper.appendChild(edit);
 
           const del = document.createElement('button');
           del.textContent = 'Delete';
@@ -195,34 +268,96 @@ function renderViewerPage(itemId: string): string {
         }
       }
 
-      function getSelectedText() {
+      function getSelectionInfo() {
         const doc = iframe?.contentWindow?.document;
         if (!doc) {
-          return '';
+          return { text: '', anchor: null };
         }
         const selection = doc.getSelection();
-        if (!selection) {
-          return '';
+        if (!selection || selection.rangeCount === 0) {
+          return { text: '', anchor: null };
         }
-        return String(selection).trim();
+        const range = selection.getRangeAt(0);
+        const text = String(selection).trim();
+        if (!text) {
+          return { text: '', anchor: null };
+        }
+
+        const startElement = range.startContainer.nodeType === Node.TEXT_NODE
+          ? range.startContainer.parentElement
+          : range.startContainer;
+        const endElement = range.endContainer.nodeType === Node.TEXT_NODE
+          ? range.endContainer.parentElement
+          : range.endContainer;
+        const selector = toCssPath(startElement);
+
+        const bodyText = (doc.body?.innerText || '').replace(/\\s+/g, ' ').trim();
+        const normalizedText = text.replace(/\\s+/g, ' ').trim();
+        const start = normalizedText ? bodyText.indexOf(normalizedText) : -1;
+        const end = start >= 0 ? start + normalizedText.length : -1;
+
+        return {
+          text,
+          anchor: JSON.stringify({
+            kind: 'html-quote-v1',
+            exact: normalizedText,
+            prefix: start > 0 ? bodyText.slice(Math.max(0, start - 32), start) : '',
+            suffix: end >= 0 ? bodyText.slice(end, Math.min(bodyText.length, end + 32)) : '',
+            start,
+            end,
+            selector,
+            startSelector: toCssPath(startElement),
+            endSelector: toCssPath(endElement),
+            startNodePath: toNodePath(doc.body, range.startContainer),
+            endNodePath: toNodePath(doc.body, range.endContainer),
+            startOffset: range.startOffset,
+            endOffset: range.endOffset,
+            rangeStartOffset: range.startOffset,
+            rangeEndOffset: range.endOffset,
+            version: 1,
+          }),
+        };
       }
 
       async function createAnnotation(type) {
-        const selectedText = getSelectedText();
-        let comment = null;
-        let text = selectedText || null;
+        const selection = getSelectionInfo();
+        const selectedText = selection.text || null;
 
-        if (type === 'note') {
-          const input = window.prompt('Note text', selectedText || '');
-          if (input === null) {
-            return;
-          }
-          text = input.trim() || null;
-          comment = text;
+        if (!selectedText) {
+          window.alert('Select text first.');
+          return;
         }
 
-        if (!text) {
-          window.alert('Select text first (or provide note text).');
+        if (type === 'note') {
+          const note = window.prompt('Add note for selected text', '');
+          if (note === null) {
+            return;
+          }
+          const normalizedSelected = selectedText.replace(/\\s+/g, ' ').trim();
+          const target = annotationsCache.find((annotation) =>
+            typeof annotation.text === 'string' &&
+            annotation.text.replace(/\\s+/g, ' ').trim() === normalizedSelected &&
+            (annotation.type === 'highlight' || annotation.type === 'underline'),
+          );
+          if (!target) {
+            window.alert('Create a highlight or underline on this sentence first, then add a note.');
+            return;
+          }
+
+          const patchResponse = await fetch('/viewer/api/annotations/' + encodeURIComponent(target.id), {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              text: target.text,
+              comment: (note || '').trim() || null,
+            }),
+          });
+          if (!patchResponse.ok) {
+            const content = await patchResponse.text();
+            window.alert(content || 'Failed to add note');
+            return;
+          }
+          await loadAnnotations();
           return;
         }
 
@@ -231,10 +366,11 @@ function renderViewerPage(itemId: string): string {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             type,
-            text,
-            comment,
+            text: selectedText,
+            comment: null,
             color: null,
             tags: [],
+            anchor: selection.anchor,
           }),
         });
 
@@ -244,6 +380,25 @@ function renderViewerPage(itemId: string): string {
           return;
         }
 
+        await loadAnnotations();
+        refreshSnapshot();
+      }
+
+      async function editAnnotation(annotation) {
+        const nextText = window.prompt('Edit annotation text', annotation.text || annotation.comment || '');
+        if (nextText === null) {
+          return;
+        }
+        const response = await fetch('/viewer/api/annotations/' + encodeURIComponent(annotation.id), {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text: nextText.trim() || null, comment: annotation.comment || null }),
+        });
+        if (!response.ok) {
+          const content = await response.text();
+          window.alert(content || 'Failed to edit annotation');
+          return;
+        }
         await loadAnnotations();
         refreshSnapshot();
       }
@@ -280,31 +435,153 @@ function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
     return null;
   }
 
+  function parseAnchor(annotation) {
+    if (typeof annotation.anchor !== 'string') {
+      return null;
+    }
+    try {
+      return JSON.parse(annotation.anchor);
+    } catch {
+      return null;
+    }
+  }
+
+  function getFirstTextNode(element) {
+    if (!element) {
+      return null;
+    }
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (typeof node.nodeValue === 'string' && node.nodeValue.length > 0) {
+        return node;
+      }
+    }
+    return null;
+  }
+
+  function getNodeByPath(root, path) {
+    if (!root || !Array.isArray(path)) {
+      return null;
+    }
+    let current = root;
+    for (const index of path) {
+      if (!current || !current.childNodes || typeof index !== 'number') {
+        return null;
+      }
+      current = current.childNodes[index] || null;
+    }
+    return current;
+  }
+
+  function getTextRangeFromSelector(anchor, text) {
+    if (!anchor) {
+      return null;
+    }
+
+    if (Array.isArray(anchor.startNodePath) && Array.isArray(anchor.endNodePath)) {
+      const startNode = getNodeByPath(document.body, anchor.startNodePath);
+      const endNode = getNodeByPath(document.body, anchor.endNodePath);
+      if (startNode && endNode && startNode.nodeType === Node.TEXT_NODE && endNode.nodeType === Node.TEXT_NODE) {
+        const startValue = startNode.nodeValue || '';
+        const endValue = endNode.nodeValue || '';
+        const startOffset = typeof anchor.startOffset === 'number'
+          ? Math.max(0, Math.min(anchor.startOffset, startValue.length))
+          : 0;
+        const endOffset = typeof anchor.endOffset === 'number'
+          ? Math.max(0, Math.min(anchor.endOffset, endValue.length))
+          : endValue.length;
+        if (endOffset > startOffset || startNode !== endNode) {
+          const range = document.createRange();
+          range.setStart(startNode, startOffset);
+          range.setEnd(endNode, endOffset);
+          if (String(range).trim().length > 0) {
+            return range;
+          }
+        }
+      }
+    }
+
+    if (typeof anchor.startSelector === 'string' && typeof anchor.endSelector === 'string') {
+      const startElement = document.querySelector(anchor.startSelector);
+      const endElement = document.querySelector(anchor.endSelector);
+      const startNode = getFirstTextNode(startElement);
+      const endNode = getFirstTextNode(endElement);
+      if (startNode && endNode) {
+        const startValue = startNode.nodeValue || '';
+        const endValue = endNode.nodeValue || '';
+        const startOffset = typeof anchor.startOffset === 'number'
+          ? Math.max(0, Math.min(anchor.startOffset, startValue.length))
+          : 0;
+        const endOffset = typeof anchor.endOffset === 'number'
+          ? Math.max(0, Math.min(anchor.endOffset, endValue.length))
+          : endValue.length;
+        if (endOffset > startOffset || startNode !== endNode) {
+          const range = document.createRange();
+          range.setStart(startNode, startOffset);
+          range.setEnd(endNode, endOffset);
+          if (String(range).trim().length > 0) {
+            return range;
+          }
+        }
+      }
+    }
+
+    if (typeof anchor.selector !== 'string') {
+      return null;
+    }
+    const element = document.querySelector(anchor.selector);
+    if (!element) {
+      return null;
+    }
+    const firstTextNode = getFirstTextNode(element);
+    if (!firstTextNode || typeof firstTextNode.nodeValue !== 'string') {
+      return null;
+    }
+    const value = firstTextNode.nodeValue;
+    const start = typeof anchor.rangeStartOffset === 'number' ? anchor.rangeStartOffset : value.indexOf(text);
+    const end = typeof anchor.rangeEndOffset === 'number' ? anchor.rangeEndOffset : start + text.length;
+    if (start < 0 || end <= start || end > value.length) {
+      return null;
+    }
+    const range = document.createRange();
+    range.setStart(firstTextNode, start);
+    range.setEnd(firstTextNode, end);
+    return range;
+  }
+
   function applyMark(annotation) {
     const text = (annotation.text || '').trim();
     if (!text) {
       return;
     }
-    const hit = findFirstTextNodeWithValue(document.body, text);
-    if (!hit) {
+    const anchor = parseAnchor(annotation);
+
+    let range = getTextRangeFromSelector(anchor, text);
+    if (!range) {
+      const hit = findFirstTextNodeWithValue(document.body, text);
+      if (hit) {
+        range = document.createRange();
+        range.setStart(hit.node, hit.index);
+        range.setEnd(hit.node, hit.index + text.length);
+      }
+    }
+    if (!range) {
       return;
     }
-    const range = document.createRange();
-    range.setStart(hit.node, hit.index);
-    range.setEnd(hit.node, hit.index + text.length);
 
     const span = document.createElement('span');
     span.setAttribute('data-sonder-annotation-id', annotation.id);
     if (annotation.type === 'underline') {
       span.className = 'sonder-overlay-underline';
-    } else if (annotation.type === 'highlight') {
-      span.className = 'sonder-overlay-highlight';
     } else {
       span.className = 'sonder-overlay-highlight';
     }
 
     try {
-      range.surroundContents(span);
+      const fragment = range.extractContents();
+      span.appendChild(fragment);
+      range.insertNode(span);
     } catch {
       // Ignore invalid range overlaps in MVP overlay pass.
     }
@@ -348,6 +625,32 @@ function parseCreatePayload(body: string): CreateViewerAnnotationPayload {
 		tags,
 		anchor: typeof parsed.anchor === "string" ? parsed.anchor : null,
 	};
+}
+
+function parseUpdatePayload(body: string): UpdateViewerAnnotationPayload {
+	const parsed = JSON.parse(body) as Partial<UpdateViewerAnnotationPayload>;
+	if (!parsed || typeof parsed !== "object") {
+		throw new Error("Invalid payload");
+	}
+	const payload: UpdateViewerAnnotationPayload = {};
+	if ("text" in parsed) {
+		payload.text = typeof parsed.text === "string" ? parsed.text : null;
+	}
+	if ("comment" in parsed) {
+		payload.comment = typeof parsed.comment === "string" ? parsed.comment : null;
+	}
+	if ("color" in parsed) {
+		payload.color = typeof parsed.color === "string" ? parsed.color : null;
+	}
+	if ("tags" in parsed) {
+		payload.tags = Array.isArray(parsed.tags)
+			? parsed.tags.filter((tag): tag is string => typeof tag === "string" && tag.length > 0)
+			: [];
+	}
+	if ("anchor" in parsed && typeof parsed.anchor === "string") {
+		payload.anchor = parsed.anchor;
+	}
+	return payload;
 }
 
 async function handleRequest(app: SonderApp, request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -434,6 +737,25 @@ async function handleRequest(app: SonderApp, request: IncomingMessage, response:
 				anchor,
 			});
 			respondJson(response, 201, annotation);
+			return;
+		}
+	}
+
+	if (method === "PATCH") {
+		const annPatchMatch = pathname.match(/^\/viewer\/api\/annotations\/([^/]+)$/);
+		if (annPatchMatch) {
+			const annotationId = decodeURIComponent(annPatchMatch[1]);
+			const body = await readRequestBody(request);
+			const payload = parseUpdatePayload(body);
+			const updated = app.updateAnnotation({
+				annotationId,
+				text: payload.text,
+				comment: payload.comment,
+				color: payload.color,
+				tags: payload.tags,
+				anchor: payload.anchor,
+			});
+			respondJson(response, 200, updated);
 			return;
 		}
 	}

@@ -9,6 +9,7 @@ Sonder is a Telegram-first conversational personal knowledge system built on pi-
 - Ask contract: `/ask <itemId> <question>`
 - List contract: `/list [limit]`
 - Annotation contracts: `/annotate <itemId> <text> [#tags...]`, `/ann list <itemId>`, `/ann del <annotationId>`
+- Viewer annotation actions: select text then `highlight | underline | note`, with edit/delete in sidebar
 - Dialogue mode contracts: `/open [itemId]`, `/where`, `/exit`, `/sessions <itemId>`, `/resume <sessionId>`
 - Snapshot outputs: `snapshot.html + assets`, extracted text, screenshot fallback
 - Annotation types: `highlight`, `underline`, `note`
@@ -161,23 +162,58 @@ SONDER_TELEGRAM_BOT_TOKEN="..." SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890" np
 
 Expected: JSON with `"ok": true`.
 
-2. Start bot polling
+2. Start bot polling + local viewer
 
 ```bash
-SONDER_TELEGRAM_BOT_TOKEN="..." SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890" SONDER_RESPONDER=codex npx tsx src/main.ts --telegram --root ./.sonder-data
+SONDER_TELEGRAM_BOT_TOKEN="..." SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890" SONDER_RESPONDER=codex SONDER_VIEWER_PORT=4321 npx tsx src/main.ts --telegram --root ./.sonder-data
 ```
 
-3. In Telegram chat with your bot
+Expected in terminal:
+
+- `[telegram] polling started`
+- `[viewer] started at http://127.0.0.1:4321` (port may differ)
+
+3. In Telegram, save and enter item dialogue mode
 
 ```text
 /save https://lucumr.pocoo.org/2026/2/9/a-language-for-agents #agents
-/list
-/ask <itemId> what is the main thesis?
+/open <itemId>
+/where
 ```
 
-4. Expected behavior
+Expected:
 
-- `/save` returns item summary with item ID
-- `/list` shows saved items and IDs
-- `/ask` returns a non-empty answer
-- no recurring polling transport errors in terminal
+- `/open <itemId>` returns item/session and a viewer URL
+- `/where` shows active item dialogue mode
+
+4. In browser, test viewer annotation flow
+
+- Open the returned viewer URL
+- In snapshot frame, select a sentence
+- Click `Highlight` (or `Underline` / `Note`)
+- Verify annotation appears in sidebar
+- Click `Edit` then `Delete` to confirm update and removal
+
+5. Back in Telegram, test multi-turn dialogue on active item
+
+```text
+what is the core thesis?
+how does this relate to language design?
+/exit
+/open
+hello in general mode
+/exit
+```
+
+Expected:
+
+- non-command text while item mode is active routes to that item session
+- answers are non-empty and context-aware
+- `/open` (without itemId) enters general chat mode
+- `/exit` leaves active mode
+
+6. Optional evidence check
+
+- Create a highlight/note in viewer
+- Ask a question in the item dialogue
+- Confirm answer includes annotation evidence refs when available (`[ann:...]`)

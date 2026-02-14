@@ -57,10 +57,10 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 - [ ] Implement primary Zotero-like in-snapshot annotation UX:
   - [x] `/open <itemId>` viewer entry
   - [x] selection -> highlight/underline/note actions (viewer API + basic UI)
-  - [x] overlay rendering on reopen (basic text-match pass)
+  - [x] overlay rendering on reopen (basic text-match + selector fallback)
 - [ ] Define robust anchors:
   - [ ] PDF: page + rect/path geometry
-  - [ ] HTML: quote + text-position + selector fallback
+  - [x] HTML: quote + text-position + selector fallback (MVP/basic)
   - [ ] Image: normalized bounding box (if needed)
 - [x] Add annotation CRUD APIs/repo methods (service/repo level)
 - [ ] Add annotation tagging/filtering
@@ -113,7 +113,7 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 
 - [x] Save a public web URL and reopen snapshot offline
 - [x] Artifact outputs exist: `snapshot.html + assets`, extracted text, screenshot fallback on failure
-- [ ] Add highlights/underlines/notes and retrieve them later (viewer workflow)
+- [x] Add highlights/underlines/notes and retrieve them later (viewer workflow, MVP/basic)
 - [x] `/ask` uses annotations explicitly in answer context
 - [x] `/ask` responses include inline evidence refs by default
 - [x] Full dialogue trajectory persists and is reopenable

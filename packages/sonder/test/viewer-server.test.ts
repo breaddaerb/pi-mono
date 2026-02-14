@@ -20,12 +20,16 @@ describe("viewer server", () => {
 
 		const app = new SonderApp({
 			paths: { rootDir: root },
-			responder: async () => ({
-				answer: "unused",
-				model: "stub",
-				provider: "stub",
-				citations: [],
-			}),
+			responder: async (input) => {
+				const first = input.context.annotationEvidence[0];
+				const citation = first ? `ann:${first.id}` : "";
+				return {
+					answer: citation ? `From annotation [${citation}]` : "unused",
+					model: "stub",
+					provider: "stub",
+					citations: citation ? [citation] : [],
+				};
+			},
 		});
 
 		const snapshotPath = join(root, "snapshot.html");
@@ -90,6 +94,18 @@ describe("viewer server", () => {
 			const annotationsResponse = await fetch(`${viewer.baseUrl}/viewer/api/items/item_view/annotations`);
 			expect(annotationsResponse.status).toBe(200);
 			expect(await annotationsResponse.text()).toContain(created.id);
+
+			const patchResponse = await fetch(`${viewer.baseUrl}/viewer/api/annotations/${created.id}`, {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ text: "Updated claim" }),
+			});
+			expect(patchResponse.status).toBe(200);
+			expect(await patchResponse.text()).toContain("Updated claim");
+
+			const opened = app.openItemDialogue("item_view");
+			const askResult = await app.askInItemDialogue("item_view", opened.sessionId, "what matters?");
+			expect(askResult.answer).toContain(`[ann:${created.id}]`);
 
 			const deleteResponse = await fetch(`${viewer.baseUrl}/viewer/api/annotations/${created.id}`, {
 				method: "DELETE",

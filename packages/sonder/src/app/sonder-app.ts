@@ -195,6 +195,31 @@ export class SonderApp {
 		return this.annotationsRepo.listByItemId(itemId).map((annotation) => this.toAnnotationItem(annotation));
 	}
 
+	updateAnnotation(input: {
+		annotationId: string;
+		text?: string | null;
+		comment?: string | null;
+		color?: string | null;
+		tags?: string[];
+		anchor?: string;
+	}): SonderAnnotationItem {
+		const existing = this.annotationsRepo.findById(input.annotationId);
+		if (!existing) {
+			throw new Error(`Annotation not found: ${input.annotationId}`);
+		}
+		const updated: Annotation = {
+			...existing,
+			text: input.text !== undefined ? input.text : existing.text,
+			comment: input.comment !== undefined ? input.comment : existing.comment,
+			color: input.color !== undefined ? input.color : existing.color,
+			tags: input.tags ?? existing.tags,
+			anchor: input.anchor ?? existing.anchor,
+			updatedAt: (this.options.now ?? (() => new Date()))().toISOString(),
+		};
+		this.annotationsRepo.updateById(updated);
+		return this.toAnnotationItem(updated);
+	}
+
 	deleteAnnotation(annotationId: string): boolean {
 		return this.annotationsRepo.deleteById(annotationId);
 	}
