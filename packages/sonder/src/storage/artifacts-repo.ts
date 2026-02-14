@@ -14,6 +14,7 @@ interface ArtifactRow {
 export class ArtifactsRepo {
 	private readonly insertStatement;
 	private readonly selectByIdStatement;
+	private readonly selectByItemIdStatement;
 
 	constructor(private readonly database: DatabaseSync) {
 		this.insertStatement = this.database.prepare(`
@@ -21,6 +22,9 @@ export class ArtifactsRepo {
 			VALUES (?, ?, ?, ?, ?, ?, ?)
 		`);
 		this.selectByIdStatement = this.database.prepare("SELECT * FROM artifacts WHERE id = ?");
+		this.selectByItemIdStatement = this.database.prepare(
+			"SELECT * FROM artifacts WHERE item_id = ? ORDER BY version DESC, created_at DESC",
+		);
 	}
 
 	create(artifact: Artifact): void {
@@ -41,6 +45,11 @@ export class ArtifactsRepo {
 			return null;
 		}
 		return mapArtifactRow(row as unknown as ArtifactRow);
+	}
+
+	listByItemId(itemId: string): Artifact[] {
+		const rows = this.selectByItemIdStatement.all(itemId);
+		return rows.map((row) => mapArtifactRow(row as unknown as ArtifactRow));
 	}
 }
 

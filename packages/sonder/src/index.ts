@@ -4,6 +4,19 @@ export {
 	parseTelegramCommand,
 } from "./commands/parse-command.js";
 export {
+	type AskContext,
+	type AskContextInput,
+	type AskResponder,
+	type AskResponderInput,
+	type AskResponderOutput,
+	type AskResult,
+	AskService,
+	type AskServiceDependencies,
+	type AskServiceOptions,
+	buildAskContext,
+	renderAskPrompt,
+} from "./runtime/index.js";
+export {
 	type CaptureSnapshotOptions,
 	type CaptureSnapshotResult,
 	captureSnapshot,

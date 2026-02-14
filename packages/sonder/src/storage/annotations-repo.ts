@@ -19,6 +19,7 @@ interface AnnotationRow {
 export class AnnotationsRepo {
 	private readonly insertStatement;
 	private readonly selectByIdStatement;
+	private readonly selectByItemIdStatement;
 
 	constructor(private readonly database: DatabaseSync) {
 		this.insertStatement = this.database.prepare(`
@@ -26,6 +27,9 @@ export class AnnotationsRepo {
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`);
 		this.selectByIdStatement = this.database.prepare("SELECT * FROM annotations WHERE id = ?");
+		this.selectByItemIdStatement = this.database.prepare(
+			"SELECT * FROM annotations WHERE item_id = ? ORDER BY created_at ASC",
+		);
 	}
 
 	create(annotation: Annotation): void {
@@ -50,6 +54,11 @@ export class AnnotationsRepo {
 			return null;
 		}
 		return mapAnnotationRow(row as unknown as AnnotationRow);
+	}
+
+	listByItemId(itemId: string): Annotation[] {
+		const rows = this.selectByItemIdStatement.all(itemId);
+		return rows.map((row) => mapAnnotationRow(row as unknown as AnnotationRow));
 	}
 }
 

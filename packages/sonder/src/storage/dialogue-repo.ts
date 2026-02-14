@@ -17,14 +17,17 @@ interface DialogueTurnRow {
 	model: string;
 	provider: string;
 	citations_json: string;
+	thinking: string | null;
 	created_at: string;
 }
 
 export class DialogueRepo {
 	private readonly insertSessionStatement;
 	private readonly selectSessionByIdStatement;
+	private readonly selectSessionsByItemIdStatement;
 	private readonly insertTurnStatement;
 	private readonly selectTurnByIdStatement;
+	private readonly selectTurnsBySessionIdStatement;
 
 	constructor(private readonly database: DatabaseSync) {
 		this.insertSessionStatement = this.database.prepare(`
@@ -32,12 +35,18 @@ export class DialogueRepo {
 			VALUES (?, ?, ?, ?)
 		`);
 		this.selectSessionByIdStatement = this.database.prepare("SELECT * FROM dialogue_sessions WHERE id = ?");
+		this.selectSessionsByItemIdStatement = this.database.prepare(
+			"SELECT * FROM dialogue_sessions WHERE item_id = ? ORDER BY created_at DESC",
+		);
 
 		this.insertTurnStatement = this.database.prepare(`
-			INSERT INTO dialogue_turns (id, session_id, role, content, model, provider, citations_json, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO dialogue_turns (id, session_id, role, content, model, provider, citations_json, thinking, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`);
 		this.selectTurnByIdStatement = this.database.prepare("SELECT * FROM dialogue_turns WHERE id = ?");
+		this.selectTurnsBySessionIdStatement = this.database.prepare(
+			"SELECT * FROM dialogue_turns WHERE session_id = ? ORDER BY created_at ASC",
+		);
 	}
 
 	createSession(session: DialogueSession): void {
@@ -52,6 +61,11 @@ export class DialogueRepo {
 		return mapSessionRow(row as unknown as DialogueSessionRow);
 	}
 
+	listSessionsByItemId(itemId: string): DialogueSession[] {
+		const rows = this.selectSessionsByItemIdStatement.all(itemId);
+		return rows.map((row) => mapSessionRow(row as unknown as DialogueSessionRow));
+	}
+
 	createTurn(turn: DialogueTurn): void {
 		this.insertTurnStatement.run(
 			turn.id,
@@ -61,6 +75,7 @@ export class DialogueRepo {
 			turn.model,
 			turn.provider,
 			toJsonString(turn.citations),
+			turn.thinking,
 			turn.createdAt,
 		);
 	}
@@ -71,6 +86,11 @@ export class DialogueRepo {
 			return null;
 		}
 		return mapTurnRow(row as unknown as DialogueTurnRow);
+	}
+
+	listTurnsBySessionId(sessionId: string): DialogueTurn[] {
+		const rows = this.selectTurnsBySessionIdStatement.all(sessionId);
+		return rows.map((row) => mapTurnRow(row as unknown as DialogueTurnRow));
 	}
 }
 
@@ -92,6 +112,7 @@ function mapTurnRow(row: DialogueTurnRow): DialogueTurn {
 		model: row.model,
 		provider: row.provider,
 		citations: parseStringArray(row.citations_json),
+		thinking: row.thinking,
 		createdAt: row.created_at,
 	};
 }

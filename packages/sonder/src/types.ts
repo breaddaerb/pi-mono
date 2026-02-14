@@ -56,5 +56,6 @@ export interface DialogueTurn {
 	model: string;
 	provider: string;
 	citations: string[];
+	thinking: string | null;
 	createdAt: string;
 }

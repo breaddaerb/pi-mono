@@ -77,4 +77,10 @@ CREATE INDEX IF NOT EXISTS idx_dialogue_sessions_item_id ON dialogue_sessions(it
 CREATE INDEX IF NOT EXISTS idx_dialogue_turns_session_id ON dialogue_turns(session_id);
 `,
 	},
+	{
+		version: 2,
+		sql: `
+ALTER TABLE dialogue_turns ADD COLUMN thinking TEXT;
+`,
+	},
 ];

@@ -86,15 +86,20 @@ describe("storage smoke", () => {
 			model: "gpt-5",
 			provider: "openai-codex",
 			citations: ["ann:ann_1", "art:art_1"],
+			thinking: null,
 			createdAt: "2026-02-14T01:00:04.000Z",
 		};
 		dialogueRepo.createTurn(turn);
 
 		expect(itemsRepo.findById(item.id)).toEqual(item);
 		expect(artifactsRepo.findById(artifact.id)).toEqual(artifact);
+		expect(artifactsRepo.listByItemId(item.id)).toEqual([artifact]);
 		expect(annotationsRepo.findById(annotation.id)).toEqual(annotation);
+		expect(annotationsRepo.listByItemId(item.id)).toEqual([annotation]);
 		expect(dialogueRepo.findSessionById(session.id)).toEqual(session);
+		expect(dialogueRepo.listSessionsByItemId(item.id)).toEqual([session]);
 		expect(dialogueRepo.findTurnById(turn.id)).toEqual(turn);
+		expect(dialogueRepo.listTurnsBySessionId(session.id)).toEqual([turn]);
 
 		database.close();
 	});
