@@ -106,4 +106,48 @@ describe("runCommandOnce", () => {
 		expect(exitCode).toBe(1);
 		expect(stderr.getText()).toContain("Usage:");
 	});
+
+	it("returns runtime error when codex mode has no token or oauth credential", async () => {
+		const server = await withServer((_request, response) => {
+			response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+			response.end("<html><body><h1>Test Article</h1><p>Body text</p></body></html>");
+		});
+
+		const root = mkdtempSync(join(tmpdir(), "sonder-cli-"));
+		tempDirs.push(root);
+		const saveStdout = new MemoryWritable();
+		const stderr = new MemoryWritable();
+
+		try {
+			const saveExitCode = await runCommandOnce(
+				["--root", root, "/save", `${server.baseUrl}/article`],
+				saveStdout,
+				stderr,
+				{
+					env: {
+						SONDER_RESPONDER: "codex",
+						SONDER_AUTH_PATH: join(root, "missing-auth.json"),
+						SONDER_DISABLE_GLOBAL_AUTH: "1",
+					},
+				},
+			);
+			expect(saveExitCode).toBe(0);
+			const saveOutput = JSON.parse(saveStdout.getText().trim()) as { itemId: string };
+
+			const askStdout = new MemoryWritable();
+			const askExitCode = await runCommandOnce(["--root", root, "/ask", saveOutput.itemId, "q"], askStdout, stderr, {
+				env: {
+					SONDER_RESPONDER: "codex",
+					SONDER_AUTH_PATH: join(root, "missing-auth.json"),
+					SONDER_DISABLE_GLOBAL_AUTH: "1",
+				},
+			});
+			expect(askExitCode).toBe(1);
+			const askError = JSON.parse(askStdout.getText().trim()) as { code: string; message: string };
+			expect(askError.code).toBe("RUNTIME_ERROR");
+			expect(askError.message).toContain("No Codex token available");
+		} finally {
+			await server.close();
+		}
+	});
 });

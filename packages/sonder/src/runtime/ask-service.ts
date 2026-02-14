@@ -103,6 +103,10 @@ export class AskService {
 			context,
 		});
 
+		if (response.answer.trim().length === 0) {
+			throw new Error("Model returned an empty answer.");
+		}
+
 		const assistantAnswer = ensureInlineReferences(response.answer, response.citations);
 		const assistantTurn = this.createTurn({
 			sessionId: session.id,

@@ -64,10 +64,28 @@ List saved items (copy an `itemId`):
 node dist/main.js --root ./.sonder-data /list
 ```
 
-Ask an item (replace `<itemId>` with ID from save output):
+Ask an item (replace `ITEM_ID` with a real ID):
 
 ```bash
-node dist/main.js --root ./.sonder-data /ask <itemId> "what is the main thesis?"
+node dist/main.js --root ./.sonder-data /ask ITEM_ID "what is the main thesis?"
 ```
 
-Current CLI uses a stub responder for local end-to-end flow testing.
+Responder modes:
+
+- Default (stub): no extra env needed
+- Codex (source run, OAuth-aware):
+
+```bash
+SONDER_RESPONDER=codex npx tsx src/main.ts --root ./.sonder-data /ask <itemId> "what is the main thesis?"
+```
+
+- Codex (built dist, explicit token):
+
+```bash
+SONDER_RESPONDER=codex SONDER_CODEX_TOKEN="<token>" node dist/main.js --root ./.sonder-data /ask ITEM_ID "what is the main thesis?"
+```
+
+Optional Codex env:
+
+- `SONDER_CODEX_MODEL` (e.g. `gpt-5.3-codex`)
+- `SONDER_CODEX_REASONING` (`minimal|low|medium|high`)

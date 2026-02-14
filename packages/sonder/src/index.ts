@@ -24,6 +24,9 @@ export {
 	type AskServiceDependencies,
 	type AskServiceOptions,
 	buildAskContext,
+	type CodexResponderOptions,
+	createCodexResponder,
+	createStubResponder,
 	renderAskPrompt,
 } from "./runtime/index.js";
 export {

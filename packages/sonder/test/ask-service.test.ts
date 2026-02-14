@@ -102,6 +102,56 @@ describe("AskService", () => {
 		database.close();
 	});
 
+	it("rejects empty model answers", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-ask-"));
+		tempDirs.push(root);
+		const extractedPath = join(root, "data", "items", "item_0", "extracted.txt");
+		mkdirSync(dirname(extractedPath), { recursive: true });
+		writeFileSync(extractedPath, "Text", "utf8");
+
+		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
+		const itemsRepo = new ItemsRepo(database);
+		const artifactsRepo = new ArtifactsRepo(database);
+		const annotationsRepo = new AnnotationsRepo(database);
+		const dialogueRepo = new DialogueRepo(database);
+
+		itemsRepo.create({
+			id: "item_0",
+			createdAt: "2026-02-14T03:00:00.000Z",
+			sourceType: "web",
+			originalUrl: "https://example.com",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		artifactsRepo.create({
+			id: "art_extracted_0",
+			itemId: "item_0",
+			kind: "extracted-text",
+			path: extractedPath,
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: "2026-02-14T03:00:01.000Z",
+		});
+
+		const askService = new AskService({
+			itemsRepo,
+			artifactsRepo,
+			annotationsRepo,
+			dialogueRepo,
+			responder: async () => ({
+				answer: "",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+		});
+
+		await expect(askService.ask("item_0", "Q?")).rejects.toThrow("Model returned an empty answer.");
+		database.close();
+	});
+
 	it("can persist thinking when explicitly enabled", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-ask-"));
 		tempDirs.push(root);
