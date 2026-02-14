@@ -13,6 +13,15 @@ interface TelegramGetUpdatesResponse {
 	}>;
 }
 
+interface TelegramGetMeResponse {
+	ok: boolean;
+	result?: {
+		id: number;
+		username?: string;
+		first_name?: string;
+	};
+}
+
 interface TelegramSendMessageResponse {
 	ok: boolean;
 }
@@ -27,6 +36,7 @@ interface TelegramFetchInit {
 type TelegramFetch = (url: string, init: TelegramFetchInit) => Promise<Response>;
 
 export interface TelegramApi {
+	getMe(): Promise<{ id: number; username?: string; firstName?: string }>;
 	getUpdates(
 		offset: number,
 		timeoutSeconds: number,
@@ -67,6 +77,22 @@ export class TelegramHttpApi implements TelegramApi {
 			request.dispatcher = this.dispatcher;
 		}
 		return request;
+	}
+
+	async getMe(): Promise<{ id: number; username?: string; firstName?: string }> {
+		const response = await this.fetchImpl(`${this.baseUrl}/getMe`, this.buildRequest({}));
+		if (!response.ok) {
+			throw new Error(`Telegram getMe failed: HTTP ${response.status}`);
+		}
+		const payload = (await response.json()) as TelegramGetMeResponse;
+		if (!payload.ok || !payload.result) {
+			throw new Error("Telegram getMe returned invalid payload");
+		}
+		return {
+			id: payload.result.id,
+			username: payload.result.username,
+			firstName: payload.result.first_name,
+		};
 	}
 
 	async getUpdates(

@@ -10,6 +10,10 @@ class FakeTelegramApi implements TelegramApi {
 
 	public sent: Array<{ chatId: number; text: string }> = [];
 
+	async getMe(): Promise<{ id: number; username?: string; firstName?: string }> {
+		return { id: 1, username: "fake", firstName: "fake" };
+	}
+
 	async getUpdates(
 		_offset: number,
 		_timeoutSeconds: number,

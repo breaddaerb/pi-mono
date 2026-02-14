@@ -1,6 +1,6 @@
 import { Writable } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { runTelegramMode } from "../src/cli/run-telegram.js";
+import { runTelegramCheckMode, runTelegramMode } from "../src/cli/run-telegram.js";
 
 class MemoryWritable extends Writable {
 	private chunks: string[] = [];
@@ -30,6 +30,47 @@ describe("runTelegramMode", () => {
 		} finally {
 			if (originalToken) {
 				process.env.SONDER_TELEGRAM_BOT_TOKEN = originalToken;
+			}
+		}
+	});
+
+	it("telegram check mode returns bot connectivity info", async () => {
+		const originalToken = process.env.SONDER_TELEGRAM_BOT_TOKEN;
+		process.env.SONDER_TELEGRAM_BOT_TOKEN = "token";
+
+		const fetchImpl = async (url: string) => {
+			if (url.includes("/getMe")) {
+				return new Response(
+					JSON.stringify({ ok: true, result: { id: 1, username: "sonder", first_name: "Sonder" } }),
+					{
+						status: 200,
+						headers: { "content-type": "application/json" },
+					},
+				);
+			}
+			if (url.includes("/getUpdates")) {
+				return new Response(JSON.stringify({ ok: true, result: [] }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				});
+			}
+			return new Response("not found", { status: 404 });
+		};
+
+		try {
+			const stdout = new MemoryWritable();
+			const stderr = new MemoryWritable();
+			const exitCode = await runTelegramCheckMode([], stdout, stderr, { fetchImpl });
+
+			expect(exitCode).toBe(0);
+			expect(stderr.getText()).toBe("");
+			expect(stdout.getText()).toContain('"ok": true');
+			expect(stdout.getText()).toContain('"username": "sonder"');
+		} finally {
+			if (originalToken) {
+				process.env.SONDER_TELEGRAM_BOT_TOKEN = originalToken;
+			} else {
+				delete process.env.SONDER_TELEGRAM_BOT_TOKEN;
 			}
 		}
 	});

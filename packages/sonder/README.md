@@ -90,6 +90,12 @@ Optional Codex env:
 - `SONDER_CODEX_MODEL` (e.g. `gpt-5.3-codex`)
 - `SONDER_CODEX_REASONING` (`minimal|low|medium|high`)
 
+Telegram connectivity check:
+
+```bash
+SONDER_TELEGRAM_BOT_TOKEN="<bot-token>" npx tsx src/main.ts --telegram-check
+```
+
 Telegram long-polling mode (MVP skeleton):
 
 ```bash

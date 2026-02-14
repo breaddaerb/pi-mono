@@ -9,7 +9,7 @@ export {
 } from "./app/index.js";
 export { createResponderFromEnv } from "./cli/responder-from-env.js";
 export { runCommandOnce } from "./cli/run-once.js";
-export { runTelegramMode } from "./cli/run-telegram.js";
+export { type RunTelegramOptions, runTelegramCheckMode, runTelegramMode } from "./cli/run-telegram.js";
 export {
 	type ParsedTelegramCommand,
 	type ParseTelegramCommandError,
