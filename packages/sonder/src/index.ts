@@ -7,7 +7,9 @@ export {
 	type SonderListItem,
 	type SonderProcessResult,
 } from "./app/index.js";
+export { createResponderFromEnv } from "./cli/responder-from-env.js";
 export { runCommandOnce } from "./cli/run-once.js";
+export { runTelegramMode } from "./cli/run-telegram.js";
 export {
 	type ParsedTelegramCommand,
 	type ParseTelegramCommandError,
@@ -47,6 +49,7 @@ export {
 	getItemArtifactDirectory,
 	ItemsRepo,
 } from "./storage/index.js";
+export { type TelegramApi, TelegramBotRunner, TelegramHttpApi, type TelegramRunnerOptions } from "./transport/index.js";
 export type {
 	Annotation,
 	AnnotationType,

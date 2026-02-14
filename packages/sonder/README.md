@@ -40,7 +40,7 @@ npm run test
 Run specific tests (used in current implementation):
 
 ```bash
-npx tsx ../../node_modules/vitest/dist/cli.js --run test/parse-command.test.ts test/storage-smoke.test.ts test/snapshot-service.test.ts test/ask-service.test.ts test/sonder-app.test.ts test/cli-run-once.test.ts
+npx tsx ../../node_modules/vitest/dist/cli.js --run test/parse-command.test.ts test/storage-smoke.test.ts test/snapshot-service.test.ts test/ask-service.test.ts test/sonder-app.test.ts test/cli-run-once.test.ts test/telegram-transport.test.ts test/cli-run-telegram.test.ts
 ```
 
 ## Run current version (local command runner)
@@ -89,3 +89,15 @@ Optional Codex env:
 
 - `SONDER_CODEX_MODEL` (e.g. `gpt-5.3-codex`)
 - `SONDER_CODEX_REASONING` (`minimal|low|medium|high`)
+
+Telegram long-polling mode (MVP skeleton):
+
+```bash
+SONDER_TELEGRAM_BOT_TOKEN="<bot-token>" SONDER_RESPONDER=codex npx tsx src/main.ts --telegram --root ./.sonder-data
+```
+
+If your network requires a proxy:
+
+```bash
+SONDER_TELEGRAM_BOT_TOKEN="<bot-token>" SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890" SONDER_RESPONDER=codex npx tsx src/main.ts --telegram --root ./.sonder-data
+```

@@ -1,8 +1,7 @@
-import { join } from "node:path";
 import type { Writable } from "node:stream";
-import { AuthStorage } from "@mariozechner/pi-coding-agent";
 import { SonderApp } from "../app/index.js";
-import { type AskResponder, createCodexResponder, createStubResponder } from "../runtime/index.js";
+import type { AskResponder } from "../runtime/index.js";
+import { createResponderFromEnv } from "./responder-from-env.js";
 
 interface ParsedCliArgs {
 	rootDir: string;
@@ -58,46 +57,6 @@ function usage(): string {
 		"    - SONDER_CODEX_TOKEN=<token>",
 		"    - or pi OAuth credentials in .pi/auth.json (or SONDER_AUTH_PATH)",
 	].join("\n");
-}
-
-function createCodexTokenResolver(env: NodeJS.ProcessEnv): () => Promise<string | undefined> {
-	const explicitToken = env.SONDER_CODEX_TOKEN;
-	if (explicitToken) {
-		return async () => explicitToken;
-	}
-
-	const localAuthPath = env.SONDER_AUTH_PATH ?? join(process.cwd(), ".pi", "auth.json");
-	const localAuthStorage = new AuthStorage(localAuthPath);
-	const useGlobalAuth = env.SONDER_DISABLE_GLOBAL_AUTH !== "1";
-	const globalAuthStorage = useGlobalAuth ? new AuthStorage() : null;
-
-	return async () => {
-		const localToken = await localAuthStorage.getApiKey("openai-codex");
-		if (localToken) {
-			return localToken;
-		}
-		if (!globalAuthStorage) {
-			return undefined;
-		}
-		return globalAuthStorage.getApiKey("openai-codex");
-	};
-}
-
-function createResponderFromEnv(env: NodeJS.ProcessEnv): AskResponder {
-	const mode = (env.SONDER_RESPONDER ?? "stub").toLowerCase();
-	if (mode === "codex") {
-		const reasoning = env.SONDER_CODEX_REASONING;
-		const modelId = env.SONDER_CODEX_MODEL;
-		return createCodexResponder({
-			getToken: createCodexTokenResolver(env),
-			modelId,
-			reasoning:
-				reasoning === "minimal" || reasoning === "low" || reasoning === "medium" || reasoning === "high"
-					? reasoning
-					: undefined,
-		});
-	}
-	return createStubResponder();
 }
 
 export async function runCommandOnce(
