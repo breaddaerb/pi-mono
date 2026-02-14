@@ -36,3 +36,5 @@ These rules apply to Sonder implementation work in this repository.
   - `packages/sonder/TODO.md`
   - `docs/sonder-implementation-checklist.md`
 - Do this in the same implementation cycle before proposing commit.
+- For every new user-facing feature (especially new slash commands), always update usage/docs in:
+  - `packages/sonder/README.md`
