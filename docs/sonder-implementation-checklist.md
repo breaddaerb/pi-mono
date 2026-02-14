@@ -57,7 +57,7 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 - [ ] Implement primary Zotero-like in-snapshot annotation UX:
   - [x] `/open <itemId>` viewer entry
   - [x] selection -> highlight/underline/note actions (viewer API + basic UI)
-  - [ ] overlay rendering on reopen
+  - [x] overlay rendering on reopen (basic text-match pass)
 - [ ] Define robust anchors:
   - [ ] PDF: page + rect/path geometry
   - [ ] HTML: quote + text-position + selector fallback

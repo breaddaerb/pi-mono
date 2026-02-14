@@ -146,6 +146,13 @@ function renderViewerPage(itemId: string): string {
       const annRoot = document.getElementById('ann');
       const iframe = document.getElementById('snapshot');
 
+      function refreshSnapshot() {
+        if (!iframe) {
+          return;
+        }
+        iframe.src = '/viewer/items/' + encodeURIComponent(itemId) + '/snapshot?ts=' + Date.now();
+      }
+
       async function loadAnnotations() {
         const response = await fetch('/viewer/api/items/' + encodeURIComponent(itemId) + '/annotations');
         const data = await response.json();
@@ -180,6 +187,7 @@ function renderViewerPage(itemId: string): string {
           del.onclick = async () => {
             await fetch('/viewer/api/annotations/' + encodeURIComponent(annotation.id), { method: 'DELETE' });
             await loadAnnotations();
+            refreshSnapshot();
           };
           wrapper.appendChild(del);
 
@@ -237,6 +245,7 @@ function renderViewerPage(itemId: string): string {
         }
 
         await loadAnnotations();
+        refreshSnapshot();
       }
 
       document.getElementById('btnHighlight').onclick = () => createAnnotation('highlight');
@@ -248,6 +257,75 @@ function renderViewerPage(itemId: string): string {
     </script>
   </body>
 </html>`;
+}
+
+function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
+	const overlayScript = `
+<style id="sonder-overlay-style">
+.sonder-overlay-highlight { background: #ffe58f; }
+.sonder-overlay-underline { text-decoration: underline; text-decoration-color: #ff4d4f; text-decoration-thickness: 2px; }
+</style>
+<script id="sonder-overlay-script">
+(function() {
+  function findFirstTextNodeWithValue(root, target) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const value = node.nodeValue || '';
+      const index = value.indexOf(target);
+      if (index >= 0) {
+        return { node, index };
+      }
+    }
+    return null;
+  }
+
+  function applyMark(annotation) {
+    const text = (annotation.text || '').trim();
+    if (!text) {
+      return;
+    }
+    const hit = findFirstTextNodeWithValue(document.body, text);
+    if (!hit) {
+      return;
+    }
+    const range = document.createRange();
+    range.setStart(hit.node, hit.index);
+    range.setEnd(hit.node, hit.index + text.length);
+
+    const span = document.createElement('span');
+    span.setAttribute('data-sonder-annotation-id', annotation.id);
+    if (annotation.type === 'underline') {
+      span.className = 'sonder-overlay-underline';
+    } else if (annotation.type === 'highlight') {
+      span.className = 'sonder-overlay-highlight';
+    } else {
+      span.className = 'sonder-overlay-highlight';
+    }
+
+    try {
+      range.surroundContents(span);
+    } catch {
+      // Ignore invalid range overlaps in MVP overlay pass.
+    }
+  }
+
+  fetch('/viewer/api/items/${encodeURIComponent(itemId)}/annotations')
+    .then((res) => res.json())
+    .then((payload) => {
+      const annotations = Array.isArray(payload.annotations) ? payload.annotations : [];
+      for (const annotation of annotations) {
+        applyMark(annotation);
+      }
+    })
+    .catch(() => {});
+})();
+</script>`;
+
+	if (html.includes("</body>")) {
+		return html.replace("</body>", `${overlayScript}</body>`);
+	}
+	return `${html}\n${overlayScript}`;
 }
 
 function parseCreatePayload(body: string): CreateViewerAnnotationPayload {
@@ -297,9 +375,9 @@ async function handleRequest(app: SonderApp, request: IncomingMessage, response:
 			const snapshotArtifact = artifacts.find((artifact) => artifact.kind === "snapshot-html");
 			const extractedArtifact = artifacts.find((artifact) => artifact.kind === "extracted-text");
 			if (snapshotArtifact) {
-				const body = readFileSync(snapshotArtifact.path);
+				const html = readFileSync(snapshotArtifact.path, "utf8");
 				response.writeHead(200, { "content-type": getMimeTypeByPath(snapshotArtifact.path) });
-				response.end(body);
+				response.end(injectOverlayIntoSnapshotHtml(html, itemId));
 				return;
 			}
 			if (extractedArtifact) {

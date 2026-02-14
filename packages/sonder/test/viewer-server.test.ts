@@ -68,6 +68,10 @@ describe("viewer server", () => {
 			const page = await pageResponse.text();
 			expect(page).toContain("Highlight");
 
+			const snapshotResponse = await fetch(`${viewer.baseUrl}/viewer/items/item_view/snapshot`);
+			expect(snapshotResponse.status).toBe(200);
+			expect(await snapshotResponse.text()).toContain("sonder-overlay-script");
+
 			const createResponse = await fetch(`${viewer.baseUrl}/viewer/api/items/item_view/annotations`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
