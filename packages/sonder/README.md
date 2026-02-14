@@ -244,7 +244,8 @@ Expected:
 - Open the returned viewer URL
 - In snapshot frame, select a sentence
 - Click `Highlight` (or `Underline` / `Note`)
-- Verify annotation appears in sidebar
+- Verify annotation appears in sidebar with clearer type/comment/tag card styling
+- Scroll the annotation list and verify it stays below the top action bar (no overlap)
 - Click `Edit` then `Delete` to confirm update and removal
 - Verify snapshot refresh preserves scroll context without visible top-jump flicker
 

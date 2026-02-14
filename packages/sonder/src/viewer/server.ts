@@ -116,20 +116,30 @@ function renderViewerPage(itemId: string): string {
     <meta charset="utf-8" />
     <title>Sonder Viewer - ${escapedItemId}</title>
     <style>
-      body { font-family: system-ui, sans-serif; margin: 0; }
-      header { padding: 12px 16px; border-bottom: 1px solid #ddd; }
+      body { font-family: Inter, system-ui, sans-serif; margin: 0; background: #f7f8fa; color: #1f2430; }
+      header { padding: 12px 16px; border-bottom: 1px solid #e7e9ee; background: #fff; }
       main { display: grid; grid-template-columns: 2fr 1fr; height: calc(100vh - 56px); }
-      iframe { width: 100%; height: 100%; border: 0; }
-      .side { border-left: 1px solid #ddd; overflow: auto; padding: 12px; }
+      iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+      .side { border-left: 1px solid #e7e9ee; padding: 12px; background: #fcfcfd; display: flex; flex-direction: column; overflow: hidden; }
+      .side-top { position: sticky; top: 0; z-index: 3; background: #fcfcfd; padding-bottom: 8px; }
       .toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
-      button { padding: 4px 10px; }
-      .hint { color: #666; font-size: 12px; }
-      .annotation { border: 1px solid #e5e5e5; border-left: 4px solid #ddd; border-radius: 6px; padding: 8px; margin-bottom: 8px; cursor: pointer; }
-      .annotation:hover { background: #fafafa; }
-      .annotation-type { font-size: 12px; color: #555; font-weight: 600; }
-      .annotation-text { white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
-      .annotation-meta { font-size: 11px; color: #888; margin-top: 4px; }
-      .annotation-actions { display: flex; gap: 8px; margin-top: 6px; }
+      button { padding: 6px 12px; border: 1px solid #d7dbe5; border-radius: 8px; background: #fff; color: #1f2430; cursor: pointer; }
+      button:hover { background: #f1f4f9; }
+      .hint { color: #677188; font-size: 12px; }
+      .ann-title { margin: 12px 0 8px 0; font-size: 14px; color: #3c455a; }
+      .ann-scroll { overflow: auto; min-height: 0; padding-top: 8px; }
+      .annotation { border: 1px solid #e1e6ef; border-left: 4px solid #ddd; border-radius: 10px; padding: 10px; margin-bottom: 10px; cursor: pointer; background: #fff; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+      .annotation:hover { box-shadow: 0 2px 12px rgba(31,36,48,.08); transform: translateY(-1px); }
+      .annotation-active { border-color: #8bb8ff; box-shadow: 0 0 0 2px rgba(22,119,255,.15); }
+      .annotation-topline { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+      .annotation-type { font-size: 11px; color: #2f4163; font-weight: 700; letter-spacing: .02em; background: #eaf2ff; border: 1px solid #d1e3ff; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; }
+      .annotation-id { font-size: 11px; color: #8a93a6; }
+      .annotation-text { white-space: pre-wrap; word-break: break-word; margin-top: 8px; font-size: 13px; line-height: 1.45; }
+      .annotation-comment { font-size: 12px; line-height: 1.45; margin-top: 8px; background: #f6f8fd; border: 1px solid #e1e7f5; padding: 8px; border-radius: 8px; color: #37425a; }
+      .annotation-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+      .annotation-tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #f3f5f9; border: 1px solid #e2e7f0; color: #56607a; }
+      .annotation-meta { font-size: 11px; color: #8a93a6; margin-top: 8px; }
+      .annotation-actions { display: flex; gap: 8px; margin-top: 8px; }
     </style>
   </head>
   <body>
@@ -140,15 +150,17 @@ function renderViewerPage(itemId: string): string {
     <main>
       <iframe id="snapshot" src="/viewer/items/${encodeURIComponent(itemId)}/snapshot"></iframe>
       <div class="side">
-        <div class="toolbar">
-          <button id="btnHighlight">Highlight</button>
-          <button id="btnUnderline">Underline</button>
-          <button id="btnNote">Note</button>
+        <div class="side-top">
+          <div class="toolbar">
+            <button id="btnHighlight">Highlight</button>
+            <button id="btnUnderline">Underline</button>
+            <button id="btnNote">Note</button>
+          </div>
+          <div class="hint">Selection is captured from the left snapshot frame.</div>
+          <hr />
+          <h3 class="ann-title">Annotations</h3>
         </div>
-        <div class="hint">Selection is captured from the left snapshot frame.</div>
-        <hr />
-        <h3>Annotations</h3>
-        <div id="ann">Loading...</div>
+        <div id="ann" class="ann-scroll">Loading...</div>
       </div>
     </main>
     <script>
@@ -245,6 +257,15 @@ function renderViewerPage(itemId: string): string {
         setTimeout(() => {
           node.classList.remove('sonder-overlay-focus');
         }, 1200);
+
+        const cards = annRoot.querySelectorAll('.annotation');
+        for (const card of cards) {
+          card.classList.remove('annotation-active');
+        }
+        const activeCard = annRoot.querySelector('[data-annotation-id="' + annotationId + '"]');
+        if (activeCard) {
+          activeCard.classList.add('annotation-active');
+        }
       }
 
       async function loadAnnotations() {
@@ -262,23 +283,46 @@ function renderViewerPage(itemId: string): string {
           const wrapper = document.createElement('div');
           wrapper.className = 'annotation';
           wrapper.style.borderLeftColor = annotationColor(annotation);
+          wrapper.setAttribute('data-annotation-id', annotation.id);
           wrapper.onclick = () => focusAnnotation(annotation.id);
+
+          const topLine = document.createElement('div');
+          topLine.className = 'annotation-topline';
 
           const type = document.createElement('div');
           type.className = 'annotation-type';
-          type.textContent = annotation.type + ' • ' + annotation.id;
-          wrapper.appendChild(type);
+          type.textContent = annotation.type;
+          topLine.appendChild(type);
+
+          const id = document.createElement('div');
+          id.className = 'annotation-id';
+          id.textContent = annotation.id;
+          topLine.appendChild(id);
+
+          wrapper.appendChild(topLine);
 
           const text = document.createElement('div');
           text.className = 'annotation-text';
-          text.textContent = annotation.text || '(empty)';
+          text.textContent = annotation.text || '(empty selection)';
           wrapper.appendChild(text);
 
           if (annotation.comment) {
             const note = document.createElement('div');
-            note.className = 'annotation-meta';
-            note.textContent = 'Note: ' + annotation.comment;
+            note.className = 'annotation-comment';
+            note.textContent = annotation.comment;
             wrapper.appendChild(note);
+          }
+
+          if (Array.isArray(annotation.tags) && annotation.tags.length > 0) {
+            const tags = document.createElement('div');
+            tags.className = 'annotation-tags';
+            for (const tag of annotation.tags) {
+              const chip = document.createElement('span');
+              chip.className = 'annotation-tag';
+              chip.textContent = '#' + tag;
+              tags.appendChild(chip);
+            }
+            wrapper.appendChild(tags);
           }
 
           const meta = document.createElement('div');

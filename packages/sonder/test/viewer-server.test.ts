@@ -72,6 +72,10 @@ describe("viewer server", () => {
 			const page = await pageResponse.text();
 			expect(page).toContain("Highlight");
 			expect(page).toContain("focusAnnotation");
+			expect(page).toContain("annotation-active");
+			expect(page).toContain("annotation-topline");
+			expect(page).toContain('class="side-top"');
+			expect(page).toContain('class="ann-scroll"');
 
 			const snapshotResponse = await fetch(`${viewer.baseUrl}/viewer/items/item_view/snapshot`);
 			expect(snapshotResponse.status).toBe(200);
