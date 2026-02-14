@@ -83,4 +83,19 @@ CREATE INDEX IF NOT EXISTS idx_dialogue_turns_session_id ON dialogue_turns(sessi
 ALTER TABLE dialogue_turns ADD COLUMN thinking TEXT;
 `,
 	},
+	{
+		version: 3,
+		sql: `
+CREATE TABLE IF NOT EXISTS chat_mode_states (
+	chat_id INTEGER PRIMARY KEY,
+	mode TEXT NOT NULL,
+	item_id TEXT,
+	session_id TEXT NOT NULL,
+	history_json TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_mode_states_updated_at ON chat_mode_states(updated_at);
+`,
+	},
 ];

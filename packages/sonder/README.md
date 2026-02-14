@@ -140,6 +140,16 @@ Dialogue usage in Telegram:
 /resume <sessionId> # resume item session
 ```
 
+Active dialogue mode is persisted per chat in SQLite, so mode/session can survive process restart.
+
+Session resume flow example:
+
+```text
+/sessions <itemId>
+/resume <sessionId>
+/where
+```
+
 If your network requires a proxy:
 
 ```bash

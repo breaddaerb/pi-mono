@@ -88,6 +88,52 @@ describe("TelegramBotRunner", () => {
 		app.close();
 	});
 
+	it("restores item dialogue mode from storage across runner restart", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `Item answer: ${input.question}`,
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		app.itemsRepo.create({
+			id: "item_open",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_text",
+			itemId: "item_open",
+			kind: "extracted-text",
+			path: join(root, "missing.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
+		const firstApi = new FakeTelegramApi([{ updateId: 1, chatId: 9, text: "/open item_open" }]);
+		const firstRunner = new TelegramBotRunner(firstApi, app);
+		await firstRunner.pollOnce();
+		expect(firstApi.sent[0].text).toContain("Opened item dialogue");
+
+		const secondApi = new FakeTelegramApi([{ updateId: 2, chatId: 9, text: "continue" }]);
+		const secondRunner = new TelegramBotRunner(secondApi, app);
+		await secondRunner.pollOnce();
+		expect(secondApi.sent[0].text).toContain("Item answer: continue");
+		app.close();
+	});
+
 	it("supports item dialogue mode via /open <itemId>", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);

@@ -71,6 +71,7 @@ describe("viewer server", () => {
 			expect(pageResponse.status).toBe(200);
 			const page = await pageResponse.text();
 			expect(page).toContain("Highlight");
+			expect(page).toContain("focusAnnotation");
 
 			const snapshotResponse = await fetch(`${viewer.baseUrl}/viewer/items/item_view/snapshot`);
 			expect(snapshotResponse.status).toBe(200);

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	AnnotationsRepo,
 	ArtifactsRepo,
+	ChatModeStateRepo,
 	createDatabase,
 	DialogueRepo,
 	getArtifactFilePath,
@@ -31,6 +32,7 @@ describe("storage smoke", () => {
 		const artifactsRepo = new ArtifactsRepo(database);
 		const annotationsRepo = new AnnotationsRepo(database);
 		const dialogueRepo = new DialogueRepo(database);
+		const chatModeStateRepo = new ChatModeStateRepo(database);
 
 		const item: Item = {
 			id: "item_1",
@@ -103,6 +105,25 @@ describe("storage smoke", () => {
 		expect(dialogueRepo.listSessionsByItemId(item.id)).toEqual([session]);
 		expect(dialogueRepo.findTurnById(turn.id)).toEqual(turn);
 		expect(dialogueRepo.listTurnsBySessionId(session.id)).toEqual([turn]);
+
+		chatModeStateRepo.upsert(
+			{
+				chatId: 42,
+				mode: "item",
+				itemId: item.id,
+				sessionId: session.id,
+				history: [],
+			},
+			"2026-02-14T01:00:05.000Z",
+		);
+		expect(chatModeStateRepo.findByChatId(42)).toMatchObject({
+			chatId: 42,
+			mode: "item",
+			itemId: item.id,
+			sessionId: session.id,
+		});
+		expect(chatModeStateRepo.deleteByChatId(42)).toBe(true);
+		expect(chatModeStateRepo.findByChatId(42)).toBeNull();
 
 		database.close();
 	});

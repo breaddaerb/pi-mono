@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Writable } from "node:stream";
 import { type Dispatcher, ProxyAgent, fetch as undiciFetch } from "undici";
 import type { SonderApp } from "../app/index.js";
+import { ChatModeStateRepo } from "../storage/index.js";
 
 interface TelegramGetUpdatesResponse {
 	ok: boolean;
@@ -300,6 +301,7 @@ export class TelegramBotRunner {
 	private readonly stderr: Writable;
 	private readonly getViewerItemUrl?: (itemId: string) => string;
 	private readonly chatModes = new Map<number, ChatModeState>();
+	private readonly chatModeStateRepo: ChatModeStateRepo;
 
 	constructor(
 		private readonly api: TelegramApi,
@@ -310,6 +312,7 @@ export class TelegramBotRunner {
 		this.idleDelayMs = options.idleDelayMs ?? 250;
 		this.stderr = options.stderr ?? process.stderr;
 		this.getViewerItemUrl = options.getViewerItemUrl;
+		this.chatModeStateRepo = new ChatModeStateRepo(this.app.database);
 	}
 
 	async pollOnce(): Promise<void> {
@@ -331,6 +334,46 @@ export class TelegramBotRunner {
 		}
 	}
 
+	private getChatMode(chatId: number): ChatModeState | undefined {
+		const memoryMode = this.chatModes.get(chatId);
+		if (memoryMode) {
+			return memoryMode;
+		}
+
+		const stored = this.chatModeStateRepo.findByChatId(chatId);
+		if (!stored) {
+			return undefined;
+		}
+
+		const restored: ChatModeState =
+			stored.mode === "item"
+				? { mode: "item", itemId: stored.itemId, sessionId: stored.sessionId }
+				: { mode: "general", sessionId: stored.sessionId, history: stored.history };
+		this.chatModes.set(chatId, restored);
+		return restored;
+	}
+
+	private setChatMode(chatId: number, mode: ChatModeState): void {
+		this.chatModes.set(chatId, mode);
+		if (mode.mode === "item") {
+			this.chatModeStateRepo.upsert(
+				{ chatId, mode: "item", itemId: mode.itemId, sessionId: mode.sessionId, history: [] },
+				new Date().toISOString(),
+			);
+			return;
+		}
+		this.chatModeStateRepo.upsert(
+			{ chatId, mode: "general", itemId: null, sessionId: mode.sessionId, history: mode.history },
+			new Date().toISOString(),
+		);
+	}
+
+	private clearChatMode(chatId: number): boolean {
+		const existed = this.chatModes.delete(chatId);
+		const existedInDb = this.chatModeStateRepo.deleteByChatId(chatId);
+		return existed || existedInDb;
+	}
+
 	private async handleMessage(chatId: number, text: string): Promise<void> {
 		try {
 			const modeCommand = parseModeCommand(text);
@@ -340,7 +383,7 @@ export class TelegramBotRunner {
 			}
 
 			if (!text.startsWith("/")) {
-				const activeMode = this.chatModes.get(chatId);
+				const activeMode = this.getChatMode(chatId);
 				if (!activeMode) {
 					await this.api.sendMessage(
 						chatId,
@@ -360,6 +403,7 @@ export class TelegramBotRunner {
 				const response = await this.app.chatWithoutItem(activeMode.sessionId, text, activeMode.history);
 				activeMode.history.push({ role: "user", content: text });
 				activeMode.history.push({ role: "assistant", content: response.answer });
+				this.setChatMode(chatId, activeMode);
 				for (const chunk of splitForTelegram(response.answer)) {
 					await this.api.sendMessage(chatId, chunk);
 				}
@@ -381,7 +425,7 @@ export class TelegramBotRunner {
 		if (command.type === "open") {
 			if (!command.itemId) {
 				const sessionId = randomUUID();
-				this.chatModes.set(chatId, {
+				this.setChatMode(chatId, {
 					mode: "general",
 					sessionId,
 					history: [],
@@ -394,7 +438,7 @@ export class TelegramBotRunner {
 			}
 
 			const opened = this.app.openItemDialogue(command.itemId);
-			this.chatModes.set(chatId, {
+			this.setChatMode(chatId, {
 				mode: "item",
 				itemId: opened.itemId,
 				sessionId: opened.sessionId,
@@ -408,13 +452,13 @@ export class TelegramBotRunner {
 		}
 
 		if (command.type === "exit") {
-			const existed = this.chatModes.delete(chatId);
+			const existed = this.clearChatMode(chatId);
 			await this.api.sendMessage(chatId, existed ? "Exited active dialogue mode." : "No active dialogue mode.");
 			return;
 		}
 
 		if (command.type === "where") {
-			const mode = this.chatModes.get(chatId);
+			const mode = this.getChatMode(chatId);
 			if (!mode) {
 				await this.api.sendMessage(chatId, "No active dialogue mode.");
 				return;
@@ -442,7 +486,7 @@ export class TelegramBotRunner {
 		}
 
 		const resumed = this.app.resumeItemDialogue(command.sessionId);
-		this.chatModes.set(chatId, {
+		this.setChatMode(chatId, {
 			mode: "item",
 			itemId: resumed.itemId,
 			sessionId: resumed.sessionId,

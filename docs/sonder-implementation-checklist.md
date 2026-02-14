@@ -58,6 +58,8 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
   - [x] `/open <itemId>` viewer entry
   - [x] selection -> highlight/underline/note actions (viewer API + basic UI)
   - [x] overlay rendering on reopen (basic text-match + selector fallback)
+  - [x] click annotation in sidebar -> jump/focus target span
+  - [x] polish annotation cards (type/color/comment clarity)
 - [ ] Define robust anchors:
   - [ ] PDF: page + rect/path geometry
   - [x] HTML: quote + text-position + selector fallback (MVP/basic)
@@ -77,7 +79,8 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 - [ ] Add a reveal-on-demand control for thinking blocks (if available)
 - [ ] Add per-turn remove/delete action (post-MVP acceptable)
 - [x] Store model/provider per turn
-- [x] Add per-chat active dialogue state (`itemId`, `sessionId`)
+- [x] Add per-chat active dialogue state (`itemId`, `sessionId`) (in-memory MVP)
+- [x] Persist per-chat active dialogue state in DB (restart-safe)
 - [x] Add `/open <itemId>` to enter item dialogue mode
 - [x] Add `/open` without itemId for general chat mode
 - [x] Route non-command messages to active dialogue turns
@@ -93,7 +96,7 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 - [ ] Hybrid ranking (filter + keyword + vector)
 - [ ] `/open` returns compact item card + key annotations + latest dialogue pointers
 - [x] `/open` launches local snapshot annotation viewer for direct highlighting/notes
-- [ ] `/open` enters item-anchored dialogue space (or sets active dialogue context)
+- [x] `/open` enters item-anchored dialogue space (sets active dialogue context)
 
 ## 8) Auth and model management
 
@@ -119,5 +122,6 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 - [x] Full dialogue trajectory persists and is reopenable
 - [x] Enter item dialogue via `/open <itemId>`, continue multi-turn discussion, and exit with `/exit`
 - [x] Enter general dialogue via `/open` (no item), chat multi-turn, and exit with `/exit`
+- [x] Active dialogue mode/session survives process restart (per-chat persisted state)
 - [ ] `/find` returns relevant items by metadata + semantic intent
 - [x] Codex/OpenAI-only model path works end-to-end

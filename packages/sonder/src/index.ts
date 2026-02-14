@@ -42,12 +42,14 @@ export {
 	AnnotationsRepo,
 	ArtifactsRepo,
 	applyMigrations,
+	ChatModeStateRepo,
 	type CreateDatabaseOptions,
 	createDatabase,
 	DialogueRepo,
 	getArtifactFilePath,
 	getItemArtifactDirectory,
 	ItemsRepo,
+	type StoredChatModeState,
 } from "./storage/index.js";
 export { type TelegramApi, TelegramBotRunner, TelegramHttpApi, type TelegramRunnerOptions } from "./transport/index.js";
 export type {

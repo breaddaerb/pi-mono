@@ -124,10 +124,12 @@ function renderViewerPage(itemId: string): string {
       .toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
       button { padding: 4px 10px; }
       .hint { color: #666; font-size: 12px; }
-      .annotation { border: 1px solid #e5e5e5; border-radius: 6px; padding: 8px; margin-bottom: 8px; }
-      .annotation-type { font-size: 12px; color: #555; }
+      .annotation { border: 1px solid #e5e5e5; border-left: 4px solid #ddd; border-radius: 6px; padding: 8px; margin-bottom: 8px; cursor: pointer; }
+      .annotation:hover { background: #fafafa; }
+      .annotation-type { font-size: 12px; color: #555; font-weight: 600; }
       .annotation-text { white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
       .annotation-meta { font-size: 11px; color: #888; margin-top: 4px; }
+      .annotation-actions { display: flex; gap: 8px; margin-top: 6px; }
     </style>
   </head>
   <body>
@@ -213,6 +215,32 @@ function renderViewerPage(itemId: string): string {
         iframe.src = '/viewer/items/' + encodeURIComponent(itemId) + '/snapshot?ts=' + Date.now();
       }
 
+      function annotationColor(annotation) {
+        if (annotation.type === 'underline') {
+          return '#ff7875';
+        }
+        if (annotation.type === 'highlight') {
+          return '#ffe58f';
+        }
+        return '#91d5ff';
+      }
+
+      function focusAnnotation(annotationId) {
+        const doc = iframe?.contentWindow?.document;
+        if (!doc) {
+          return;
+        }
+        const node = doc.querySelector('[data-sonder-annotation-id="' + annotationId + '"]');
+        if (!node) {
+          return;
+        }
+        node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        node.classList.add('sonder-overlay-focus');
+        setTimeout(() => {
+          node.classList.remove('sonder-overlay-focus');
+        }, 1200);
+      }
+
       async function loadAnnotations() {
         const response = await fetch('/viewer/api/items/' + encodeURIComponent(itemId) + '/annotations');
         const data = await response.json();
@@ -227,6 +255,8 @@ function renderViewerPage(itemId: string): string {
         for (const annotation of annotations) {
           const wrapper = document.createElement('div');
           wrapper.className = 'annotation';
+          wrapper.style.borderLeftColor = annotationColor(annotation);
+          wrapper.onclick = () => focusAnnotation(annotation.id);
 
           const type = document.createElement('div');
           type.className = 'annotation-type';
@@ -250,19 +280,28 @@ function renderViewerPage(itemId: string): string {
           meta.textContent = annotation.createdAt;
           wrapper.appendChild(meta);
 
+          const actions = document.createElement('div');
+          actions.className = 'annotation-actions';
+
           const edit = document.createElement('button');
           edit.textContent = 'Edit';
-          edit.onclick = () => editAnnotation(annotation);
-          wrapper.appendChild(edit);
+          edit.onclick = (event) => {
+            event.stopPropagation();
+            editAnnotation(annotation);
+          };
+          actions.appendChild(edit);
 
           const del = document.createElement('button');
           del.textContent = 'Delete';
-          del.onclick = async () => {
+          del.onclick = async (event) => {
+            event.stopPropagation();
             await fetch('/viewer/api/annotations/' + encodeURIComponent(annotation.id), { method: 'DELETE' });
             await loadAnnotations();
             refreshSnapshot();
           };
-          wrapper.appendChild(del);
+          actions.appendChild(del);
+
+          wrapper.appendChild(actions);
 
           annRoot.appendChild(wrapper);
         }
@@ -419,6 +458,7 @@ function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
 <style id="sonder-overlay-style">
 .sonder-overlay-highlight { background: #ffe58f; }
 .sonder-overlay-underline { text-decoration: underline; text-decoration-color: #ff4d4f; text-decoration-thickness: 2px; }
+.sonder-overlay-focus { outline: 2px solid #1677ff; outline-offset: 2px; }
 </style>
 <script id="sonder-overlay-script">
 (function() {
