@@ -77,12 +77,13 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 - [ ] Add a reveal-on-demand control for thinking blocks (if available)
 - [ ] Add per-turn remove/delete action (post-MVP acceptable)
 - [x] Store model/provider per turn
-- [ ] Add per-chat active dialogue state (`itemId`, `sessionId`)
-- [ ] Add `/open <itemId>` to enter item dialogue mode
-- [ ] Route non-command messages to active dialogue turns
-- [ ] Add `/exit` and `/where` for mode control
-- [ ] Add `/sessions <itemId>` and `/resume <sessionId>`
-- [ ] Keep `/ask <itemId> <question>` as stateless fallback
+- [x] Add per-chat active dialogue state (`itemId`, `sessionId`)
+- [x] Add `/open <itemId>` to enter item dialogue mode
+- [x] Add `/open` without itemId for general chat mode
+- [x] Route non-command messages to active dialogue turns
+- [x] Add `/exit` and `/where` for mode control
+- [x] Add `/sessions <itemId>` and `/resume <sessionId>`
+- [x] Keep `/ask <itemId> <question>` as stateless fallback
 
 ## 7) Retrieval (`/find`, `/open`)
 
@@ -116,6 +117,7 @@ This checklist is the execution companion to `docs/sonder-feasibility-on-pi.md`.
 - [x] `/ask` uses annotations explicitly in answer context
 - [x] `/ask` responses include inline evidence refs by default
 - [x] Full dialogue trajectory persists and is reopenable
-- [ ] Enter item dialogue via `/open <itemId>`, continue multi-turn discussion, and exit with `/exit`
+- [x] Enter item dialogue via `/open <itemId>`, continue multi-turn discussion, and exit with `/exit`
+- [x] Enter general dialogue via `/open` (no item), chat multi-turn, and exit with `/exit`
 - [ ] `/find` returns relevant items by metadata + semantic intent
 - [x] Codex/OpenAI-only model path works end-to-end

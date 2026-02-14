@@ -1,6 +1,7 @@
 import type { Writable } from "node:stream";
 import { SonderApp } from "../app/index.js";
 import { TelegramBotRunner, TelegramHttpApi } from "../transport/telegram.js";
+import { startViewerServer } from "../viewer/index.js";
 import { createResponderFromEnv } from "./responder-from-env.js";
 
 interface ParsedTelegramArgs {
@@ -43,6 +44,7 @@ function usage(): string {
 		"Environment:",
 		"  SONDER_TELEGRAM_BOT_TOKEN=<bot-token>",
 		"  SONDER_TELEGRAM_PROXY=<proxy-url> (optional)",
+		"  SONDER_VIEWER_PORT=<port> (optional, local snapshot viewer)",
 	].join("\n");
 }
 
@@ -117,18 +119,29 @@ export async function runTelegramMode(
 	});
 
 	const proxyUrl = getProxyUrl(process.env);
+	const viewerPortRaw = process.env.SONDER_VIEWER_PORT;
+	const viewerPort = viewerPortRaw ? Number.parseInt(viewerPortRaw, 10) : undefined;
+	const viewerServer = await startViewerServer({
+		app,
+		port: Number.isFinite(viewerPort) ? viewerPort : undefined,
+	});
 
 	stderr.write("[telegram] polling started\n");
+	stderr.write(`[viewer] started at ${viewerServer.baseUrl}\n`);
 	if (proxyUrl) {
 		stderr.write(`[telegram] using proxy: ${proxyUrl}\n`);
 	}
 	const api = new TelegramHttpApi(token, options.fetchImpl, { proxyUrl });
-	const runner = new TelegramBotRunner(api, app, { stderr });
+	const runner = new TelegramBotRunner(api, app, {
+		stderr,
+		getViewerItemUrl: viewerServer.getItemUrl,
+	});
 
 	try {
 		await runner.runForever();
 		return 0;
 	} finally {
+		await viewerServer.close();
 		app.close();
 		stdout.write("[telegram] stopped\n");
 	}

@@ -9,6 +9,7 @@ Sonder is a Telegram-first conversational personal knowledge system built on pi-
 - Ask contract: `/ask <itemId> <question>`
 - List contract: `/list [limit]`
 - Annotation contracts: `/annotate <itemId> <text> [#tags...]`, `/ann list <itemId>`, `/ann del <annotationId>`
+- Dialogue mode contracts: `/open [itemId]`, `/where`, `/exit`, `/sessions <itemId>`, `/resume <sessionId>`
 - Snapshot outputs: `snapshot.html + assets`, extracted text, screenshot fallback
 - Annotation types: `highlight`, `underline`, `note`
 - Ask behavior: inline evidence refs in responses by default
@@ -127,10 +128,27 @@ Telegram long-polling mode (MVP skeleton):
 SONDER_TELEGRAM_BOT_TOKEN="<bot-token>" SONDER_RESPONDER=codex npx tsx src/main.ts --telegram --root ./.sonder-data
 ```
 
+Dialogue usage in Telegram:
+
+```text
+/open <itemId>      # enter item dialogue mode
+/open               # enter general chat mode
+/where              # show active mode
+/exit               # leave active mode
+/sessions <itemId>  # list sessions for item
+/resume <sessionId> # resume item session
+```
+
 If your network requires a proxy:
 
 ```bash
 SONDER_TELEGRAM_BOT_TOKEN="<bot-token>" SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890" SONDER_RESPONDER=codex npx tsx src/main.ts --telegram --root ./.sonder-data
+```
+
+Optional local viewer port:
+
+```bash
+SONDER_VIEWER_PORT=4321 SONDER_TELEGRAM_BOT_TOKEN="<bot-token>" SONDER_RESPONDER=codex npx tsx src/main.ts --telegram --root ./.sonder-data
 ```
 
 ### Minimal E2E checklist (live)

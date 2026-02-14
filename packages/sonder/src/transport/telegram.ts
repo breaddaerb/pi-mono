@@ -49,6 +49,7 @@ export interface TelegramRunnerOptions {
 	longPollSeconds?: number;
 	idleDelayMs?: number;
 	stderr?: Writable;
+	getViewerItemUrl?: (itemId: string) => string;
 }
 
 export interface TelegramHttpApiOptions {
@@ -297,6 +298,7 @@ export class TelegramBotRunner {
 	private readonly longPollSeconds: number;
 	private readonly idleDelayMs: number;
 	private readonly stderr: Writable;
+	private readonly getViewerItemUrl?: (itemId: string) => string;
 	private readonly chatModes = new Map<number, ChatModeState>();
 
 	constructor(
@@ -307,6 +309,7 @@ export class TelegramBotRunner {
 		this.longPollSeconds = options.longPollSeconds ?? 30;
 		this.idleDelayMs = options.idleDelayMs ?? 250;
 		this.stderr = options.stderr ?? process.stderr;
+		this.getViewerItemUrl = options.getViewerItemUrl;
 	}
 
 	async pollOnce(): Promise<void> {
@@ -396,9 +399,10 @@ export class TelegramBotRunner {
 				itemId: opened.itemId,
 				sessionId: opened.sessionId,
 			});
+			const viewerLine = this.getViewerItemUrl ? `\nViewer: ${this.getViewerItemUrl(opened.itemId)}` : "";
 			await this.api.sendMessage(
 				chatId,
-				`Opened item dialogue\nItem: ${opened.itemId}\nSession: ${opened.sessionId}\nSend messages directly. /exit to leave.`,
+				`Opened item dialogue\nItem: ${opened.itemId}\nSession: ${opened.sessionId}${viewerLine}\nSend messages directly. /exit to leave.`,
 			);
 			return;
 		}

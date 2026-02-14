@@ -61,3 +61,4 @@ export type {
 	Item,
 	ItemSourceType,
 } from "./types.js";
+export { type SonderViewerServer, type SonderViewerServerOptions, startViewerServer } from "./viewer/index.js";
