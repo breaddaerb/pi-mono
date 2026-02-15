@@ -49,6 +49,11 @@ function respondHtml(response: ServerResponse, status: number, html: string): vo
 	response.end(html);
 }
 
+function renderPlainTextSnapshotHtml(text: string): string {
+	const escaped = text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+	return `<!doctype html><html><head><meta charset="utf-8"/><style>body{margin:0;padding:16px;font-family:Inter,system-ui,sans-serif;line-height:1.55;color:#1f2430;background:#fff}pre{margin:0;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}</style></head><body><pre>${escaped}</pre></body></html>`;
+}
+
 function getMimeTypeByPath(path: string): string {
 	const extension = extname(path).toLowerCase();
 	if (extension === ".html") {
@@ -1108,8 +1113,14 @@ async function handleRequest(app: SonderApp, request: IncomingMessage, response:
 		if (snapshotMatch) {
 			const itemId = decodeURIComponent(snapshotMatch[1]);
 			const artifacts = app.artifactsRepo.listByItemId(itemId);
+			const evidenceArtifact = artifacts.find((artifact) => artifact.kind === "evidence-md");
 			const snapshotArtifact = artifacts.find((artifact) => artifact.kind === "snapshot-html");
 			const extractedArtifact = artifacts.find((artifact) => artifact.kind === "extracted-text");
+			if (evidenceArtifact) {
+				const text = readFileSync(evidenceArtifact.path, "utf8");
+				respondHtml(response, 200, injectOverlayIntoSnapshotHtml(renderPlainTextSnapshotHtml(text), itemId));
+				return;
+			}
 			if (snapshotArtifact) {
 				const html = readFileSync(snapshotArtifact.path, "utf8");
 				response.writeHead(200, { "content-type": getMimeTypeByPath(snapshotArtifact.path) });
@@ -1118,11 +1129,7 @@ async function handleRequest(app: SonderApp, request: IncomingMessage, response:
 			}
 			if (extractedArtifact) {
 				const text = readFileSync(extractedArtifact.path, "utf8");
-				respondHtml(
-					response,
-					200,
-					`<!doctype html><html><body><pre>${text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</pre></body></html>`,
-				);
+				respondHtml(response, 200, injectOverlayIntoSnapshotHtml(renderPlainTextSnapshotHtml(text), itemId));
 				return;
 			}
 			respondText(response, 404, `No snapshot artifacts for item: ${itemId}`);

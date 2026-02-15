@@ -359,7 +359,7 @@ export class SonderApp {
 
 		try {
 			if (parsed.value.type === "save") {
-				const result = await this.handleSave(parsed.value.url, parsed.value.tags, null);
+				const result = await this.handleSave(parsed.value.url, parsed.value.tags, parsed.value.pastedText);
 				return { ok: true, value: result };
 			}
 			if (parsed.value.type === "list") {
@@ -474,7 +474,8 @@ export class SonderApp {
 		});
 
 		const normalizedPastedText = this.normalizePastedText(pastedText);
-		const usePastedEvidence = snapshot.usedFallback && Boolean(normalizedPastedText);
+		const usePastedEvidence =
+			Boolean(normalizedPastedText) && (snapshot.usedFallback || this.shouldForcePastedEvidenceForUrl(url));
 		let extractedTextPath = snapshot.extractedTextPath;
 		let evidenceMdPath: string | null = null;
 		if (usePastedEvidence && normalizedPastedText) {
@@ -498,7 +499,7 @@ export class SonderApp {
 		this.artifactsRepo.create(extractedTextArtifact);
 		artifactIds.push(extractedTextArtifact.id);
 
-		if (snapshot.snapshotHtmlPath) {
+		if (snapshot.snapshotHtmlPath && !usePastedEvidence) {
 			const htmlArtifact = this.createArtifact(itemId, "snapshot-html", snapshot.snapshotHtmlPath, "text/html");
 			this.artifactsRepo.create(htmlArtifact);
 			artifactIds.push(htmlArtifact.id);
@@ -521,7 +522,10 @@ export class SonderApp {
 			artifactIds.push(fallbackArtifact.id);
 		}
 
-		const sourceStatus = this.mapFailureCodeToSourceStatus(snapshot.failureCode);
+		let sourceStatus = this.mapFailureCodeToSourceStatus(snapshot.failureCode);
+		if (usePastedEvidence && sourceStatus === "ok" && this.shouldForcePastedEvidenceForUrl(url)) {
+			sourceStatus = "login_required";
+		}
 		const evidenceType: SonderEvidenceType = usePastedEvidence
 			? "pasted_text"
 			: snapshot.usedFallback
@@ -694,6 +698,15 @@ export class SonderApp {
 		const prefixed = start > 0 ? `...${window}` : window;
 		const suffixed = end < compact.length ? `${prefixed}...` : prefixed;
 		return suffixed.length <= 100 ? suffixed : `${suffixed.slice(0, 97)}...`;
+	}
+
+	private shouldForcePastedEvidenceForUrl(url: string): boolean {
+		try {
+			const host = new URL(url).host.toLowerCase();
+			return host === "x.com" || host === "twitter.com" || host === "mp.weixin.qq.com";
+		} catch {
+			return false;
+		}
 	}
 
 	private normalizePastedText(text: string | null): string | null {

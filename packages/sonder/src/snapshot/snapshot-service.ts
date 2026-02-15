@@ -55,7 +55,14 @@ function classifyFailureCode(reason: string): SnapshotFailureCode {
 		normalized.includes("http 403") ||
 		normalized.includes("login") ||
 		normalized.includes("verify") ||
-		normalized.includes("captcha")
+		normalized.includes("captcha") ||
+		normalized.includes("sign in") ||
+		normalized.includes("human verification") ||
+		normalized.includes("环境异常") ||
+		normalized.includes("去验证") ||
+		normalized.includes("验证") ||
+		normalized.includes("请登录") ||
+		normalized.includes("登录")
 	) {
 		return "login_required";
 	}
@@ -63,6 +70,38 @@ function classifyFailureCode(reason: string): SnapshotFailureCode {
 		return "blocked";
 	}
 	return "fetch_failed";
+}
+
+function isLikelyLoginBlockedPage(url: string, html: string, extractedText: string): boolean {
+	const lowerUrl = url.toLowerCase();
+	const lowerHtml = html.toLowerCase();
+	const lowerExtracted = extractedText.toLowerCase();
+	const haystack = `${lowerHtml}\n${lowerExtracted}`;
+	const signals = [
+		"human verification",
+		"captcha",
+		"please log in",
+		"please login",
+		"sign in",
+		"环境异常",
+		"去验证",
+		"验证后即可继续访问",
+		"请登录",
+	];
+	const hasSignal = signals.some((signal) => haystack.includes(signal));
+	if (!hasSignal) {
+		return false;
+	}
+	if (lowerUrl.includes("mp.weixin.qq.com")) {
+		return true;
+	}
+	if (lowerUrl.includes("x.com") || lowerUrl.includes("twitter.com")) {
+		return true;
+	}
+	if (lowerUrl.includes("xiaohongshu.com")) {
+		return true;
+	}
+	return true;
 }
 
 export async function captureSnapshot(options: CaptureSnapshotOptions): Promise<CaptureSnapshotResult> {
@@ -95,6 +134,9 @@ export async function captureSnapshot(options: CaptureSnapshotOptions): Promise<
 		const html = await response.text();
 		const assetUrls = extractAssetUrls(html, options.url);
 		const extractedText = extractReadableTextFromHtml(html);
+		if (isLikelyLoginBlockedPage(options.url, html, extractedText)) {
+			throw new Error("LOGIN_REQUIRED: source returned verification/login wall");
+		}
 
 		writeFileSync(snapshotHtmlPath, html, "utf8");
 		writeFileSync(assetsManifestPath, JSON.stringify({ sourceUrl: options.url, assetUrls }, null, 2), "utf8");

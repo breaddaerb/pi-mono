@@ -55,7 +55,7 @@ SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890"
 ### Primary flow
 
 ```text
-/save <url> [#tags...]
+/save <url> [#tags...] [pasted evidence text]
 /find <query> [limit]
 /list [limit]
 /open [itemId]
@@ -87,16 +87,23 @@ SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890"
 
 ### B) Save blocked sources with pasted evidence (Telegram)
 
-If a source blocks server fetch (for example login/verification walls), send:
+If a source blocks server fetch (for example login/verification walls), send either:
+
+```text
+/save <url> <pasted text evidence>
+```
+
+or a plain message:
 
 ```text
 <url> <pasted text evidence>
 ```
 
-(or URL on first line + pasted text below).
+(URL and pasted text can also be split by newline).
 
 Behavior:
 - Sonder stores pasted text as evidence (`evidence.md` + extracted text)
+- Viewer prefers pasted evidence content when available
 - Opens item mode immediately when pasted evidence is present
 - If no pasted text is provided and fetch fails, Sonder saves fallback metadata and asks you to re-send with pasted text
 

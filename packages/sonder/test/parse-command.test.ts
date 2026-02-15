@@ -11,6 +11,20 @@ describe("parseTelegramCommand", () => {
 			type: "save",
 			url: "https://lucumr.pocoo.org/2026/2/9/a-language-for-agents",
 			tags: ["agents", "llm"],
+			pastedText: null,
+		});
+	});
+
+	it("parses /save with pasted evidence text", () => {
+		const result = parseTelegramCommand("/save https://x.com/foo/status/1 #x this is pasted evidence");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected save command to parse");
+		expect(result.value).toEqual({
+			type: "save",
+			url: "https://x.com/foo/status/1",
+			tags: ["x"],
+			pastedText: "this is pasted evidence",
 		});
 	});
 

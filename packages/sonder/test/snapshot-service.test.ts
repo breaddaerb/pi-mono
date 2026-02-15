@@ -91,6 +91,30 @@ describe("captureSnapshot", () => {
 		}
 	});
 
+	it("classifies login-required verification page as fallback", async () => {
+		const server = await withServer((_request, response) => {
+			response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+			response.end("<html><body><h1>环境异常</h1><p>完成验证后即可继续访问</p><p>去验证</p></body></html>");
+		});
+
+		const root = mkdtempSync(join(tmpdir(), "sonder-snapshot-"));
+		tempDirs.push(root);
+
+		try {
+			const result = await captureSnapshot({
+				itemId: "item_login_required",
+				url: `${server.baseUrl}/gated`,
+				dataRootDir: root,
+			});
+
+			expect(result.usedFallback).toBe(true);
+			expect(result.failureCode).toBe("login_required");
+			expect(result.failureReason).toContain("LOGIN_REQUIRED");
+		} finally {
+			await server.close();
+		}
+	});
+
 	it("writes text fallback when html fetch fails", async () => {
 		const server = await withServer((_request, response) => {
 			response.writeHead(500, { "content-type": "text/plain" });

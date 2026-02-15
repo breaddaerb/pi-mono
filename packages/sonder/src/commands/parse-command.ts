@@ -11,6 +11,7 @@ export interface ParsedSaveCommand {
 	type: "save";
 	url: string;
 	tags: string[];
+	pastedText: string | null;
 }
 
 export interface ParsedAskCommand {
@@ -87,11 +88,15 @@ function parseSaveCommand(input: string): ParseTelegramCommandResult {
 	}
 
 	const tags: string[] = [];
+	const pastedTokens: string[] = [];
 	for (const token of remainder) {
 		if (token.startsWith("#") && token.length > 1) {
 			tags.push(token.slice(1));
+			continue;
 		}
+		pastedTokens.push(token);
 	}
+	const pastedText = pastedTokens.join(" ").trim();
 
 	return {
 		ok: true,
@@ -99,6 +104,7 @@ function parseSaveCommand(input: string): ParseTelegramCommandResult {
 			type: "save",
 			url: normalizedUrl,
 			tags,
+			pastedText: pastedText.length > 0 ? pastedText : null,
 		},
 	};
 }

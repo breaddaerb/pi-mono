@@ -827,6 +827,41 @@ describe("TelegramBotRunner", () => {
 		app.close();
 	});
 
+	it("supports /save with pasted evidence text when source fetch fails", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `Item answer: ${input.question}`,
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+			snapshotFetchImpl: async () => {
+				throw new Error("fetch failed");
+			},
+		});
+
+		const api = new FakeTelegramApi([
+			{
+				updateId: 1,
+				type: "message",
+				chatId: 72,
+				text: "/save https://x.com/foo/status/5 #x this is pasted evidence",
+			},
+			{ updateId: 2, type: "message", chatId: 72, text: "follow up" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[0].text).toContain("pasted-text evidence mode");
+		expect(api.sent[1].text).toContain("Item mode opened with pasted-text evidence");
+		expect(api.sent[2].text).toContain("Item answer: follow up");
+		app.close();
+	});
+
 	it("saves url+text message as pasted evidence when fetch fails", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);

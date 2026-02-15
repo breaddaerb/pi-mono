@@ -14,6 +14,116 @@ describe("viewer server", () => {
 		tempDirs.length = 0;
 	});
 
+	it("serves pasted evidence content in viewer when no snapshot html exists", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-viewer-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+			snapshotFetchImpl: async () => {
+				throw new Error("LOGIN_REQUIRED: gated source");
+			},
+		});
+
+		const saved = await app.saveFromInput({
+			url: "https://x.com/example/status/1",
+			pastedText: "pasted evidence line one\npasted evidence line two",
+		});
+		expect(saved.evidenceType).toBe("pasted_text");
+
+		const viewer = await startViewerServer({ app });
+		try {
+			const snapshotResponse = await fetch(`${viewer.baseUrl}/viewer/items/${saved.itemId}/snapshot`);
+			expect(snapshotResponse.status).toBe(200);
+			const snapshotHtml = await snapshotResponse.text();
+			expect(snapshotHtml).toContain("pasted evidence line one");
+			expect(snapshotHtml).toContain("<pre>");
+			expect(snapshotHtml).toContain("white-space:pre-wrap");
+			expect(snapshotHtml).toContain("sonder-overlay-script");
+		} finally {
+			await viewer.close();
+			app.close();
+		}
+	});
+
+	it("prefers evidence markdown over snapshot html when both exist", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-viewer-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		const snapshotPath = join(root, "snapshot-prefer.html");
+		const extractedPath = join(root, "extracted-prefer.txt");
+		const evidencePath = join(root, "evidence-prefer.md");
+		writeFileSync(snapshotPath, "<html><body><h1>Login wall</h1></body></html>", "utf8");
+		writeFileSync(extractedPath, "fallback extracted", "utf8");
+		writeFileSync(evidencePath, "real pasted evidence content", "utf8");
+
+		app.itemsRepo.create({
+			id: "item_prefer",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://x.com/example/status/2",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_prefer_html",
+			itemId: "item_prefer",
+			kind: "snapshot-html",
+			path: snapshotPath,
+			mimeType: "text/html",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+		app.artifactsRepo.create({
+			id: "art_prefer_text",
+			itemId: "item_prefer",
+			kind: "extracted-text",
+			path: extractedPath,
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+		app.artifactsRepo.create({
+			id: "art_prefer_evidence",
+			itemId: "item_prefer",
+			kind: "evidence-md",
+			path: evidencePath,
+			mimeType: "text/markdown",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
+		const viewer = await startViewerServer({ app });
+		try {
+			const snapshotResponse = await fetch(`${viewer.baseUrl}/viewer/items/item_prefer/snapshot`);
+			expect(snapshotResponse.status).toBe(200);
+			const snapshotHtml = await snapshotResponse.text();
+			expect(snapshotHtml).toContain("real pasted evidence content");
+			expect(snapshotHtml).not.toContain("Login wall");
+		} finally {
+			await viewer.close();
+			app.close();
+		}
+	});
+
 	it("serves viewer page and supports annotation create/delete APIs", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-viewer-"));
 		tempDirs.push(root);
