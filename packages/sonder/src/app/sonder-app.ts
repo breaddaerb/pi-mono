@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { type ParseTelegramCommandError, parseTelegramCommand } from "../commands/parse-command.js";
 import { type AskResponder, AskService } from "../runtime/ask-service.js";
-import { captureSnapshot } from "../snapshot/snapshot-service.js";
+import { captureSnapshot, type SnapshotFailureCode } from "../snapshot/snapshot-service.js";
 import {
 	AnnotationsRepo,
 	ArtifactsRepo,
@@ -53,6 +53,7 @@ export interface SonderAppOptions {
 	responder: AskResponder;
 	persistThinking?: boolean;
 	now?: () => Date;
+	snapshotFetchImpl?: typeof fetch;
 }
 
 export interface SonderListItem {
@@ -85,6 +86,10 @@ export interface SonderFindItem {
 	snippets: string[];
 }
 
+export type SonderSaveSourceStatus = "ok" | "login_required" | "blocked" | "timeout" | "fetch_failed";
+
+export type SonderEvidenceType = "snapshot" | "pasted_text" | "fallback_text";
+
 export type SonderCommandResult =
 	| {
 			type: "save";
@@ -93,6 +98,9 @@ export type SonderCommandResult =
 			artifactIds: string[];
 			url: string;
 			tags: string[];
+			sourceStatus: SonderSaveSourceStatus;
+			evidenceType: SonderEvidenceType;
+			needsUserEvidence: boolean;
 	  }
 	| {
 			type: "ask";
@@ -335,6 +343,14 @@ export class SonderApp {
 		this.database.close();
 	}
 
+	async saveFromInput(input: {
+		url: string;
+		tags?: string[];
+		pastedText?: string | null;
+	}): Promise<Extract<SonderCommandResult, { type: "save" }>> {
+		return this.handleSave(input.url, input.tags ?? [], input.pastedText ?? null);
+	}
+
 	async processCommand(input: string): Promise<SonderProcessResult> {
 		const parsed = parseTelegramCommand(input);
 		if (!parsed.ok) {
@@ -343,7 +359,7 @@ export class SonderApp {
 
 		try {
 			if (parsed.value.type === "save") {
-				const result = await this.handleSave(parsed.value.url, parsed.value.tags);
+				const result = await this.handleSave(parsed.value.url, parsed.value.tags, null);
 				return { ok: true, value: result };
 			}
 			if (parsed.value.type === "list") {
@@ -431,7 +447,11 @@ export class SonderApp {
 		}
 	}
 
-	private async handleSave(url: string, tags: string[]): Promise<Extract<SonderCommandResult, { type: "save" }>> {
+	private async handleSave(
+		url: string,
+		tags: string[],
+		pastedText: string | null,
+	): Promise<Extract<SonderCommandResult, { type: "save" }>> {
 		const now = (this.options.now ?? (() => new Date()))().toISOString();
 		const itemId = randomUUID();
 		const item: Item = {
@@ -450,7 +470,19 @@ export class SonderApp {
 			itemId,
 			url,
 			dataRootDir: this.dataRootDir,
+			fetchImpl: this.options.snapshotFetchImpl,
 		});
+
+		const normalizedPastedText = this.normalizePastedText(pastedText);
+		const usePastedEvidence = snapshot.usedFallback && Boolean(normalizedPastedText);
+		let extractedTextPath = snapshot.extractedTextPath;
+		let evidenceMdPath: string | null = null;
+		if (usePastedEvidence && normalizedPastedText) {
+			evidenceMdPath = join(snapshot.itemDirectory, "evidence.md");
+			extractedTextPath = join(snapshot.itemDirectory, "evidence-extracted.txt");
+			writeFileSync(evidenceMdPath, normalizedPastedText, "utf8");
+			writeFileSync(extractedTextPath, normalizedPastedText, "utf8");
+		}
 
 		const artifactIds: string[] = [];
 		const snapshotAssetsArtifact = this.createArtifact(
@@ -462,12 +494,7 @@ export class SonderApp {
 		this.artifactsRepo.create(snapshotAssetsArtifact);
 		artifactIds.push(snapshotAssetsArtifact.id);
 
-		const extractedTextArtifact = this.createArtifact(
-			itemId,
-			"extracted-text",
-			snapshot.extractedTextPath,
-			"text/plain",
-		);
+		const extractedTextArtifact = this.createArtifact(itemId, "extracted-text", extractedTextPath, "text/plain");
 		this.artifactsRepo.create(extractedTextArtifact);
 		artifactIds.push(extractedTextArtifact.id);
 
@@ -477,7 +504,13 @@ export class SonderApp {
 			artifactIds.push(htmlArtifact.id);
 		}
 
-		if (snapshot.screenshotFallbackPath) {
+		if (evidenceMdPath) {
+			const evidenceArtifact = this.createArtifact(itemId, "evidence-md", evidenceMdPath, "text/markdown");
+			this.artifactsRepo.create(evidenceArtifact);
+			artifactIds.push(evidenceArtifact.id);
+		}
+
+		if (snapshot.screenshotFallbackPath && !usePastedEvidence) {
 			const fallbackArtifact = this.createArtifact(
 				itemId,
 				"screenshot-fallback",
@@ -488,6 +521,13 @@ export class SonderApp {
 			artifactIds.push(fallbackArtifact.id);
 		}
 
+		const sourceStatus = this.mapFailureCodeToSourceStatus(snapshot.failureCode);
+		const evidenceType: SonderEvidenceType = usePastedEvidence
+			? "pasted_text"
+			: snapshot.usedFallback
+				? "fallback_text"
+				: "snapshot";
+
 		return {
 			type: "save",
 			itemId,
@@ -495,6 +535,9 @@ export class SonderApp {
 			artifactIds,
 			url,
 			tags,
+			sourceStatus,
+			evidenceType,
+			needsUserEvidence: snapshot.usedFallback && !usePastedEvidence,
 		};
 	}
 
@@ -651,6 +694,33 @@ export class SonderApp {
 		const prefixed = start > 0 ? `...${window}` : window;
 		const suffixed = end < compact.length ? `${prefixed}...` : prefixed;
 		return suffixed.length <= 100 ? suffixed : `${suffixed.slice(0, 97)}...`;
+	}
+
+	private normalizePastedText(text: string | null): string | null {
+		if (!text) {
+			return null;
+		}
+		const normalized = text.replace(/\r\n/g, "\n").trim();
+		return normalized.length > 0 ? normalized : null;
+	}
+
+	private mapFailureCodeToSourceStatus(code: SnapshotFailureCode): SonderSaveSourceStatus {
+		if (code === "none") {
+			return "ok";
+		}
+		if (code === "login_required") {
+			return "login_required";
+		}
+		if (code === "blocked") {
+			return "blocked";
+		}
+		if (code === "timeout") {
+			return "timeout";
+		}
+		if (code === "unsupported_content_type") {
+			return "blocked";
+		}
+		return "fetch_failed";
 	}
 
 	private readExtractedTextForItem(itemId: string): string {

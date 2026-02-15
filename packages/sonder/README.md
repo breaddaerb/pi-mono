@@ -5,6 +5,7 @@ Telegram-first conversational PKM for item-anchored thinking.
 ## What Sonder does
 
 - Saves public web pages as durable local evidence (`snapshot.html + assets`, extracted text, fallback artifact)
+- Supports URL + pasted-text fallback evidence when source fetch is blocked/login-required
 - Lets you annotate saved snapshots in a local viewer (highlight / underline / note)
 - Runs multi-turn dialogue anchored to an item
 - Persists dialogue sessions and active chat mode in SQLite (restart-safe)
@@ -80,18 +81,33 @@ SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890"
 ### A) Save and continue immediately
 
 1. `/save <url> #tags`
-2. Sonder auto-enters item mode for the new item
+2. If capture succeeds, Sonder auto-enters item mode for the new item
 3. Send plain text questions directly
 4. `/exit` when done
 
-### B) Discover first, then open
+### B) Save blocked sources with pasted evidence (Telegram)
+
+If a source blocks server fetch (for example login/verification walls), send:
+
+```text
+<url> <pasted text evidence>
+```
+
+(or URL on first line + pasted text below).
+
+Behavior:
+- Sonder stores pasted text as evidence (`evidence.md` + extracted text)
+- Opens item mode immediately when pasted evidence is present
+- If no pasted text is provided and fetch fails, Sonder saves fallback metadata and asks you to re-send with pasted text
+
+### C) Discover first, then open
 
 1. `/find <query>` or `/list`
 2. Use buttons (`Time`, `Source`, `Tag`, `Sort`, `Clear`, `Prev`, `Next`)
 3. Tap `N Open` on a result row
 4. You enter item mode
 
-### C) Session behavior and defaults (important)
+### D) Session behavior and defaults (important)
 
 - Opening an item (`/open <itemId>` or button `Open`) uses this default:
   - **resume latest existing session** for that item if one exists
@@ -100,12 +116,12 @@ SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890"
   - run `/sessions` in item mode
   - choose `Resume` for a listed session, or `New Session`
 
-### D) General chat mode
+### E) General chat mode
 
 - `/open` (without itemId) starts general chat mode
 - each `/open` call creates a new general session
 
-### E) Viewer loop
+### F) Viewer loop
 
 1. In item mode, tap `Open Viewer`
 2. Select text in snapshot
@@ -119,6 +135,7 @@ SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890"
 - `/find` in Telegram without a query falls back to browse mode (`/list` behavior)
 - `/find` result rows include weighted `reasons` + short `match` snippets
 - Stale callback actions show recovery guidance
+- Save responses include source status (`ok`, `login_required`, `blocked`, `timeout`, `fetch_failed`)
 
 ## Testing
 

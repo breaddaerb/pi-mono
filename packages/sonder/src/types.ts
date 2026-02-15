@@ -11,7 +11,12 @@ export interface Item {
 	space: string | null;
 }
 
-export type ArtifactKind = "snapshot-html" | "snapshot-assets" | "extracted-text" | "screenshot-fallback";
+export type ArtifactKind =
+	| "snapshot-html"
+	| "snapshot-assets"
+	| "extracted-text"
+	| "screenshot-fallback"
+	| "evidence-md";
 
 export interface Artifact {
 	id: string;

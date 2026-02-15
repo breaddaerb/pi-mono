@@ -354,6 +354,31 @@ type ModeCommand =
 	| { type: "resume"; sessionId: string }
 	| { type: "history"; sessionId?: string };
 
+function extractUrlAndPastedText(text: string): { url: string; pastedText: string | null } | null {
+	const urlMatch = text.match(/https?:\/\/\S+/i);
+	if (!urlMatch) {
+		return null;
+	}
+	const rawUrl = urlMatch[0];
+	let normalizedUrl: string;
+	try {
+		const parsed = new URL(rawUrl);
+		normalizedUrl = parsed.toString();
+	} catch {
+		return null;
+	}
+	const before = text.slice(0, urlMatch.index ?? 0).trim();
+	const after = text.slice((urlMatch.index ?? 0) + rawUrl.length).trim();
+	const pastedRaw = [before, after]
+		.filter((part) => part.length > 0)
+		.join("\n")
+		.trim();
+	return {
+		url: normalizedUrl,
+		pastedText: pastedRaw.length > 0 ? pastedRaw : null,
+	};
+}
+
 function parseModeCommand(text: string): ModeCommand | null {
 	const parts = text
 		.trim()
@@ -433,8 +458,17 @@ function formatCommandResult(result: Awaited<ReturnType<SonderApp["processComman
 	}
 
 	if (result.value.type === "save") {
-		const mode = result.value.usedFallback ? "fallback text mode" : "snapshot mode";
+		const mode =
+			result.value.evidenceType === "snapshot"
+				? "snapshot mode"
+				: result.value.evidenceType === "pasted_text"
+					? "pasted-text evidence mode"
+					: "fallback text mode";
 		const tags = result.value.tags.length > 0 ? `\nTags: ${result.value.tags.map((tag) => `#${tag}`).join(" ")}` : "";
+		const source = `\nSource status: ${result.value.sourceStatus}`;
+		const needsEvidence = result.value.needsUserEvidence
+			? "\nNeed evidence: source blocked/login-required. Re-send the URL with pasted text in the same message."
+			: "";
 		return (
 			[
 				"Saved item",
@@ -442,7 +476,10 @@ function formatCommandResult(result: Awaited<ReturnType<SonderApp["processComman
 				`URL: ${result.value.url}`,
 				`Capture: ${mode}`,
 				`Artifacts: ${result.value.artifactIds.length}`,
-			].join("\n") + tags
+			].join("\n") +
+			source +
+			tags +
+			needsEvidence
 		);
 	}
 
@@ -1272,6 +1309,33 @@ export class TelegramBotRunner {
 			if (!text.startsWith("/")) {
 				const activeMode = this.getChatMode(chatId);
 				if (!activeMode) {
+					const urlInput = extractUrlAndPastedText(text);
+					if (urlInput) {
+						const saveResult = await this.app.saveFromInput({
+							url: urlInput.url,
+							tags: [],
+							pastedText: urlInput.pastedText,
+						});
+						const formattedSave = formatCommandResult({ ok: true, value: saveResult });
+						await this.api.sendMessage(chatId, formattedSave);
+						if (!saveResult.needsUserEvidence) {
+							const opened = this.app.openItemDialogue(saveResult.itemId);
+							this.setChatMode(chatId, {
+								mode: "item",
+								itemId: opened.itemId,
+								sessionId: opened.sessionId,
+							});
+							await this.sendItemModeOpenedMessage(
+								chatId,
+								saveResult.evidenceType === "pasted_text"
+									? "🧠 Item mode opened with pasted-text evidence."
+									: "🧠 Item mode opened for saved item.",
+								opened.itemId,
+								opened.sessionId,
+							);
+						}
+						return;
+					}
 					await this.api.sendMessage(
 						chatId,
 						"No active dialogue. Use /open <itemId> to discuss an item, or /open for general chat. Use /history <sessionId> to view past turns.",
@@ -1313,6 +1377,9 @@ export class TelegramBotRunner {
 			if (result.ok && result.value.type === "save") {
 				const responseText = formatCommandResult(result);
 				await this.api.sendMessage(chatId, responseText);
+				if (result.value.needsUserEvidence) {
+					return;
+				}
 				const opened = this.app.openItemDialogue(result.value.itemId);
 				this.setChatMode(chatId, {
 					mode: "item",
@@ -1321,7 +1388,9 @@ export class TelegramBotRunner {
 				});
 				await this.sendItemModeOpenedMessage(
 					chatId,
-					"🧠 Item mode opened for saved item.",
+					result.value.evidenceType === "pasted_text"
+						? "🧠 Item mode opened with pasted-text evidence."
+						: "🧠 Item mode opened for saved item.",
 					opened.itemId,
 					opened.sessionId,
 				);

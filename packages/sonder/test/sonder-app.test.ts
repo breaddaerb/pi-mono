@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -332,6 +332,43 @@ describe("SonderApp", () => {
 
 			const resumed = app.resumeItemDialogue(opened.sessionId);
 			expect(resumed.sessionId).toBe(opened.sessionId);
+		} finally {
+			app.close();
+		}
+	});
+
+	it("uses pasted text evidence when source fetch fails", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+			snapshotFetchImpl: async () => {
+				throw new Error("fetch failed");
+			},
+		});
+
+		try {
+			const saveResult = await app.saveFromInput({
+				url: "https://x.com/example/status/1",
+				pastedText: "manual evidence line 1\nmanual evidence line 2",
+			});
+			expect(saveResult.evidenceType).toBe("pasted_text");
+			expect(saveResult.sourceStatus).toBe("fetch_failed");
+			expect(saveResult.needsUserEvidence).toBe(false);
+
+			const artifacts = app.artifactsRepo.listByItemId(saveResult.itemId);
+			expect(artifacts.some((artifact) => artifact.kind === "evidence-md")).toBe(true);
+			const extracted = artifacts.find((artifact) => artifact.kind === "extracted-text");
+			if (!extracted) {
+				throw new Error("Expected extracted artifact");
+			}
+			expect(readFileSync(extracted.path, "utf8")).toContain("manual evidence line 1");
 		} finally {
 			app.close();
 		}

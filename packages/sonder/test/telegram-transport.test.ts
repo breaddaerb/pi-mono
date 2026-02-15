@@ -356,6 +356,9 @@ describe("TelegramBotRunner", () => {
 						artifactIds: ["art_saved"],
 						url: "https://example.com/saved",
 						tags: ["saved"],
+						sourceStatus: "ok",
+						evidenceType: "snapshot",
+						needsUserEvidence: false,
 					},
 				};
 			}
@@ -821,6 +824,70 @@ describe("TelegramBotRunner", () => {
 		await runner.pollOnce();
 
 		expect(api.sent.length).toBeGreaterThan(2);
+		app.close();
+	});
+
+	it("saves url+text message as pasted evidence when fetch fails", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `Item answer: ${input.question}`,
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+			snapshotFetchImpl: async () => {
+				throw new Error("fetch failed");
+			},
+		});
+
+		const api = new FakeTelegramApi([
+			{
+				updateId: 1,
+				type: "message",
+				chatId: 70,
+				text: "https://x.com/foo/status/1 this is pasted fallback evidence",
+			},
+			{ updateId: 2, type: "message", chatId: 70, text: "follow up" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[0].text).toContain("pasted-text evidence mode");
+		expect(api.sent[1].text).toContain("Item mode opened with pasted-text evidence");
+		expect(api.sent[2].text).toContain("Item answer: follow up");
+		app.close();
+	});
+
+	it("keeps chat inactive when source fallback needs pasted evidence", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "stub",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+			snapshotFetchImpl: async () => {
+				throw new Error("fetch failed");
+			},
+		});
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 71, text: "https://x.com/foo/status/2" },
+			{ updateId: 2, type: "message", chatId: 71, text: "hello" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[0].text).toContain("Need evidence");
+		expect(api.sent[1].text).toContain("No active dialogue");
 		app.close();
 	});
 

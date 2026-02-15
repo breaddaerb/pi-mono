@@ -70,6 +70,8 @@ describe("captureSnapshot", () => {
 			});
 
 			expect(result.usedFallback).toBe(false);
+			expect(result.failureCode).toBe("none");
+			expect(result.failureReason).toBeNull();
 			expect(result.snapshotHtmlPath).not.toBeNull();
 			expect(result.screenshotFallbackPath).toBeNull();
 
@@ -106,6 +108,8 @@ describe("captureSnapshot", () => {
 			});
 
 			expect(result.usedFallback).toBe(true);
+			expect(result.failureCode).toBe("fetch_failed");
+			expect(result.failureReason).toContain("HTTP 500");
 			expect(result.snapshotHtmlPath).toBeNull();
 			expect(result.screenshotFallbackPath).not.toBeNull();
 
