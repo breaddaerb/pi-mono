@@ -142,7 +142,7 @@ Behavior:
 - `/find` in Telegram without a query falls back to browse mode (`/list` behavior)
 - `/find` result rows include weighted `reasons` + short `match` snippets
 - Stale callback actions show recovery guidance
-- Save responses include source status (`ok`, `login_required`, `blocked`, `timeout`, `fetch_failed`)
+- Save responses include source diagnostics (`platform + status + reason`)
 
 ## Testing
 

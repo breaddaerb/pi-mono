@@ -356,7 +356,9 @@ describe("TelegramBotRunner", () => {
 						artifactIds: ["art_saved"],
 						url: "https://example.com/saved",
 						tags: ["saved"],
+						sourcePlatform: "web",
 						sourceStatus: "ok",
+						sourceStatusReason: null,
 						evidenceType: "snapshot",
 						needsUserEvidence: false,
 					},
@@ -921,7 +923,8 @@ describe("TelegramBotRunner", () => {
 		const runner = new TelegramBotRunner(api, app);
 		await runner.pollOnce();
 
-		expect(api.sent[0].text).toContain("Need evidence");
+		expect(api.sent[0].text).toContain("Link usability: not usable for reliable evidence");
+		expect(api.sent[0].text).toContain("Source:");
 		expect(api.sent[1].text).toContain("No active dialogue");
 		app.close();
 	});

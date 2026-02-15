@@ -465,9 +465,12 @@ function formatCommandResult(result: Awaited<ReturnType<SonderApp["processComman
 					? "pasted-text evidence mode"
 					: "fallback text mode";
 		const tags = result.value.tags.length > 0 ? `\nTags: ${result.value.tags.map((tag) => `#${tag}`).join(" ")}` : "";
-		const source = `\nSource status: ${result.value.sourceStatus}`;
+		const source = `\nSource: ${result.value.sourcePlatform} · ${result.value.sourceStatus}`;
+		const reason = result.value.sourceStatusReason
+			? `\nReason: ${truncateMiddle(result.value.sourceStatusReason, 180)}`
+			: "";
 		const needsEvidence = result.value.needsUserEvidence
-			? "\nNeed evidence: source blocked/login-required. Re-send the URL with pasted text in the same message."
+			? "\nLink usability: not usable for reliable evidence. Re-send with pasted text: /save <url> <pasted text>"
 			: "";
 		return (
 			[
@@ -478,6 +481,7 @@ function formatCommandResult(result: Awaited<ReturnType<SonderApp["processComman
 				`Artifacts: ${result.value.artifactIds.length}`,
 			].join("\n") +
 			source +
+			reason +
 			tags +
 			needsEvidence
 		);

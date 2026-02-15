@@ -359,7 +359,9 @@ describe("SonderApp", () => {
 				pastedText: "manual evidence line 1\nmanual evidence line 2",
 			});
 			expect(saveResult.evidenceType).toBe("pasted_text");
+			expect(saveResult.sourcePlatform).toBe("twitter");
 			expect(saveResult.sourceStatus).toBe("fetch_failed");
+			expect(saveResult.sourceStatusReason).toContain("fetch failed");
 			expect(saveResult.needsUserEvidence).toBe(false);
 
 			const artifacts = app.artifactsRepo.listByItemId(saveResult.itemId);

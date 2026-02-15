@@ -88,6 +88,8 @@ export interface SonderFindItem {
 
 export type SonderSaveSourceStatus = "ok" | "login_required" | "blocked" | "timeout" | "fetch_failed";
 
+export type SonderSourcePlatform = "twitter" | "wechat" | "xiaohongshu" | "arxiv" | "web";
+
 export type SonderEvidenceType = "snapshot" | "pasted_text" | "fallback_text";
 
 export type SonderCommandResult =
@@ -98,7 +100,9 @@ export type SonderCommandResult =
 			artifactIds: string[];
 			url: string;
 			tags: string[];
+			sourcePlatform: SonderSourcePlatform;
 			sourceStatus: SonderSaveSourceStatus;
+			sourceStatusReason: string | null;
 			evidenceType: SonderEvidenceType;
 			needsUserEvidence: boolean;
 	  }
@@ -522,9 +526,12 @@ export class SonderApp {
 			artifactIds.push(fallbackArtifact.id);
 		}
 
+		const sourcePlatform = this.detectSourcePlatform(url);
 		let sourceStatus = this.mapFailureCodeToSourceStatus(snapshot.failureCode);
+		let sourceStatusReason = snapshot.failureReason;
 		if (usePastedEvidence && sourceStatus === "ok" && this.shouldForcePastedEvidenceForUrl(url)) {
 			sourceStatus = "login_required";
+			sourceStatusReason = "Restricted source captured with pasted evidence override.";
 		}
 		const evidenceType: SonderEvidenceType = usePastedEvidence
 			? "pasted_text"
@@ -539,7 +546,9 @@ export class SonderApp {
 			artifactIds,
 			url,
 			tags,
+			sourcePlatform,
 			sourceStatus,
+			sourceStatusReason,
 			evidenceType,
 			needsUserEvidence: snapshot.usedFallback && !usePastedEvidence,
 		};
@@ -698,6 +707,27 @@ export class SonderApp {
 		const prefixed = start > 0 ? `...${window}` : window;
 		const suffixed = end < compact.length ? `${prefixed}...` : prefixed;
 		return suffixed.length <= 100 ? suffixed : `${suffixed.slice(0, 97)}...`;
+	}
+
+	private detectSourcePlatform(url: string): SonderSourcePlatform {
+		try {
+			const host = new URL(url).host.toLowerCase();
+			if (host === "x.com" || host === "twitter.com") {
+				return "twitter";
+			}
+			if (host === "mp.weixin.qq.com") {
+				return "wechat";
+			}
+			if (host.includes("xiaohongshu.com")) {
+				return "xiaohongshu";
+			}
+			if (host === "arxiv.org") {
+				return "arxiv";
+			}
+		} catch {
+			// no-op
+		}
+		return "web";
 	}
 
 	private shouldForcePastedEvidenceForUrl(url: string): boolean {

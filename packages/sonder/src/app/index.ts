@@ -7,4 +7,5 @@ export {
 	type SonderFindItem,
 	type SonderListItem,
 	type SonderProcessResult,
+	type SonderSourcePlatform,
 } from "./sonder-app.js";
