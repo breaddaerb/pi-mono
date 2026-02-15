@@ -777,7 +777,7 @@ describe("TelegramBotRunner", () => {
 		app.close();
 	});
 
-	it("shows history with pagination buttons in item mode", async () => {
+	it("shows history with pagination and per-turn full buttons in item mode", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);
 
@@ -823,16 +823,25 @@ describe("TelegramBotRunner", () => {
 		await runner.pollOnce();
 
 		expect(api.sent[1].text).toContain("page 1/");
+		const fullData = api.sent[1].inlineKeyboard?.[1]?.[0]?.callbackData;
+		if (!fullData) {
+			throw new Error("Expected full history callback data");
+		}
 		const nextData = api.sent[1].inlineKeyboard?.[0]?.[1]?.callbackData;
 		if (!nextData) {
 			throw new Error("Expected next history callback data");
 		}
 
-		api.enqueueUpdates([{ updateId: 3, type: "callback", chatId: 27, callbackQueryId: "cb_next", data: nextData }]);
+		api.enqueueUpdates([
+			{ updateId: 3, type: "callback", chatId: 27, callbackQueryId: "cb_full", data: fullData },
+			{ updateId: 4, type: "callback", chatId: 27, callbackQueryId: "cb_next", data: nextData },
+		]);
 		await runner.pollOnce();
 
-		expect(api.sent[2].text).toContain("History for");
-		expect(api.answeredCallbackIds).toContain("cb_next");
+		expect(api.sent[2].text).toContain("History turn 1");
+		expect(api.sent[2].text).toContain("Role:");
+		expect(api.sent[3].text).toContain("History for");
+		expect(api.answeredCallbackIds).toEqual(expect.arrayContaining(["cb_full", "cb_next"]));
 		app.close();
 	});
 

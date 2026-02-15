@@ -338,6 +338,7 @@ type CallbackAction =
 	| "hist_prev"
 	| "hist_next"
 	| "hist_back"
+	| "hist_full"
 	| "ctx_exit"
 	| "ctx_viewer"
 	| "ctx_del";
@@ -459,6 +460,7 @@ function parseCallbackPayload(data: string): CallbackPayload | null {
 		action !== "hist_prev" &&
 		action !== "hist_next" &&
 		action !== "hist_back" &&
+		action !== "hist_full" &&
 		action !== "ctx_exit" &&
 		action !== "ctx_viewer" &&
 		action !== "ctx_del"
@@ -1077,17 +1079,50 @@ export class TelegramBotRunner {
 		return menu.sessionIds[index - 1] ?? null;
 	}
 
-	private formatHistoryPage(sessionId: string, page: number, pageSize: number): string {
+	private getHistoryPage(
+		sessionId: string,
+		page: number,
+		pageSize: number,
+	): {
+		text: string;
+		pageTurnsCount: number;
+		safePage: number;
+		totalPages: number;
+	} {
 		const turns = this.app.listDialogueHistory(sessionId, 200);
 		if (turns.length === 0) {
-			return `History for ${sessionId}\n\n(no turns)`;
+			return {
+				text: `History for ${sessionId}\n\n(no turns)`,
+				pageTurnsCount: 0,
+				safePage: 0,
+				totalPages: 1,
+			};
 		}
 		const totalPages = Math.max(1, Math.ceil(turns.length / pageSize));
 		const safePage = Math.max(0, Math.min(page, totalPages - 1));
 		const start = safePage * pageSize;
 		const pageTurns = turns.slice(start, start + pageSize);
-		const lines = pageTurns.map((turn) => `${turn.role}: ${truncateMiddle(turn.content, 280)}`);
-		return `History for ${sessionId} (page ${safePage + 1}/${totalPages})\n\n${lines.join("\n\n")}`;
+		const lines = pageTurns.map((turn, index) => `${index + 1}. ${turn.role}: ${truncateMiddle(turn.content, 280)}`);
+		return {
+			text: `History for ${sessionId} (page ${safePage + 1}/${totalPages})\n\n${lines.join("\n\n")}`,
+			pageTurnsCount: pageTurns.length,
+			safePage,
+			totalPages,
+		};
+	}
+
+	private buildHistoryKeyboard(menuId: string, pageTurnsCount: number): TelegramInlineKeyboard {
+		const rows: TelegramInlineKeyboard = [
+			[
+				{ text: "Prev", callbackData: buildCallbackPayload("hist_prev", menuId, 0) },
+				{ text: "Next", callbackData: buildCallbackPayload("hist_next", menuId, 0) },
+				{ text: "Back", callbackData: buildCallbackPayload("hist_back", menuId, 0) },
+			],
+		];
+		for (let index = 0; index < pageTurnsCount; index++) {
+			rows.push([{ text: `${index + 1} Full`, callbackData: buildCallbackPayload("hist_full", menuId, index + 1) }]);
+		}
+		return rows;
 	}
 
 	private buildItemModeKeyboard(includeViewer: boolean): TelegramInlineKeyboard {
@@ -1396,7 +1431,12 @@ export class TelegramBotRunner {
 				return;
 			}
 
-			if (payload.action === "hist_prev" || payload.action === "hist_next" || payload.action === "hist_back") {
+			if (
+				payload.action === "hist_prev" ||
+				payload.action === "hist_next" ||
+				payload.action === "hist_back" ||
+				payload.action === "hist_full"
+			) {
 				const menu = this.getHistoryMenu(chatId, payload.menuId);
 				if (!menu) {
 					await this.api.sendMessage(chatId, "This history menu expired. Use /history again.");
@@ -1406,18 +1446,34 @@ export class TelegramBotRunner {
 					await this.api.sendMessage(chatId, "Back to item dialogue. Send your next message.");
 					return;
 				}
+				if (payload.action === "hist_full") {
+					const index = Number.parseInt(payload.argument, 10);
+					if (!Number.isFinite(index) || index <= 0) {
+						await this.api.sendMessage(chatId, "Invalid history selection. Use /history again.");
+						return;
+					}
+					const turns = this.app.listDialogueHistory(menu.sessionId, 200);
+					const totalPages = Math.max(1, Math.ceil(turns.length / menu.pageSize));
+					const safePage = Math.max(0, Math.min(menu.page, totalPages - 1));
+					const start = safePage * menu.pageSize;
+					const turn = turns.slice(start, start + menu.pageSize)[index - 1];
+					if (!turn) {
+						await this.api.sendMessage(chatId, "History turn not found on this page.");
+						return;
+					}
+					const fullText = `History turn ${index} (page ${safePage + 1})\nRole: ${turn.role}\nTime: ${turn.createdAt}\n\n${turn.content}`;
+					for (const chunk of splitForTelegram(fullText)) {
+						await this.api.sendMessage(chatId, chunk);
+					}
+					return;
+				}
 				const direction = payload.action === "hist_prev" ? -1 : 1;
 				const nextPage = Math.max(0, menu.page + direction);
 				const nextMenuId = this.createHistoryMenu(chatId, menu.sessionId, nextPage, menu.pageSize);
-				const text = this.formatHistoryPage(menu.sessionId, nextPage, menu.pageSize);
-				const keyboard: TelegramInlineKeyboard = [
-					[
-						{ text: "Prev", callbackData: buildCallbackPayload("hist_prev", nextMenuId, 0) },
-						{ text: "Next", callbackData: buildCallbackPayload("hist_next", nextMenuId, 0) },
-						{ text: "Back", callbackData: buildCallbackPayload("hist_back", nextMenuId, 0) },
-					],
-				];
-				await this.api.sendMessage(chatId, text, { inlineKeyboard: keyboard });
+				const historyPage = this.getHistoryPage(menu.sessionId, nextPage, menu.pageSize);
+				await this.api.sendMessage(chatId, historyPage.text, {
+					inlineKeyboard: this.buildHistoryKeyboard(nextMenuId, historyPage.pageTurnsCount),
+				});
 				return;
 			}
 
@@ -1722,16 +1778,14 @@ export class TelegramBotRunner {
 			if (command.sessionId) {
 				const pageSize = 8;
 				const menuId = this.createHistoryMenu(chatId, command.sessionId, 0, pageSize);
-				const text = this.formatHistoryPage(command.sessionId, 0, pageSize);
-				const keyboard: TelegramInlineKeyboard = [
-					[
-						{ text: "Prev", callbackData: buildCallbackPayload("hist_prev", menuId, 0) },
-						{ text: "Next", callbackData: buildCallbackPayload("hist_next", menuId, 0) },
-						{ text: "Back", callbackData: buildCallbackPayload("hist_back", menuId, 0) },
-					],
-				];
-				for (const chunk of splitForTelegram(text)) {
-					await this.api.sendMessage(chatId, chunk, chunk === text ? { inlineKeyboard: keyboard } : undefined);
+				const historyPage = this.getHistoryPage(command.sessionId, 0, pageSize);
+				const keyboard = this.buildHistoryKeyboard(menuId, historyPage.pageTurnsCount);
+				for (const chunk of splitForTelegram(historyPage.text)) {
+					await this.api.sendMessage(
+						chatId,
+						chunk,
+						chunk === historyPage.text ? { inlineKeyboard: keyboard } : undefined,
+					);
 				}
 				return;
 			}
@@ -1755,16 +1809,14 @@ export class TelegramBotRunner {
 
 			const pageSize = 8;
 			const menuId = this.createHistoryMenu(chatId, mode.sessionId, 0, pageSize);
-			const text = this.formatHistoryPage(mode.sessionId, 0, pageSize);
-			const keyboard: TelegramInlineKeyboard = [
-				[
-					{ text: "Prev", callbackData: buildCallbackPayload("hist_prev", menuId, 0) },
-					{ text: "Next", callbackData: buildCallbackPayload("hist_next", menuId, 0) },
-					{ text: "Back", callbackData: buildCallbackPayload("hist_back", menuId, 0) },
-				],
-			];
-			for (const chunk of splitForTelegram(text)) {
-				await this.api.sendMessage(chatId, chunk, chunk === text ? { inlineKeyboard: keyboard } : undefined);
+			const historyPage = this.getHistoryPage(mode.sessionId, 0, pageSize);
+			const keyboard = this.buildHistoryKeyboard(menuId, historyPage.pageTurnsCount);
+			for (const chunk of splitForTelegram(historyPage.text)) {
+				await this.api.sendMessage(
+					chatId,
+					chunk,
+					chunk === historyPage.text ? { inlineKeyboard: keyboard } : undefined,
+				);
 			}
 			return;
 		}

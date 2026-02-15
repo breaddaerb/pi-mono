@@ -162,6 +162,7 @@ Viewer note: snapshot rendering disables active scripts/iframes/refresh directiv
 ## Discovery UX details
 
 - `/find` and `/list` are rendered as index-based rows with inline `Open` buttons
+- `/history` includes per-turn `Full` buttons to view untruncated turn content
 - Internal item IDs are hidden in Telegram discovery output
 - `/find` in Telegram without a query falls back to browse mode (`/list` behavior)
 - `/find` result rows include weighted `reasons` + short `match` snippets
