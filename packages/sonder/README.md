@@ -7,7 +7,7 @@ Telegram-first conversational PKM for item-anchored thinking.
 - Saves public web pages as durable local evidence (`snapshot.html + assets`, extracted text, fallback artifact)
 - Supports URL + pasted-text fallback evidence when source fetch is blocked/login-required
 - Lets you annotate saved snapshots in a local viewer (highlight / underline / note)
-- Runs multi-turn dialogue anchored to an item
+- Runs multi-turn dialogue anchored to an item (citations are optional, not forced)
 - Persists dialogue sessions and active chat mode in SQLite (restart-safe)
 - Supports discovery via `/list` and `/find` with Telegram buttons (no ID-centric UX)
 

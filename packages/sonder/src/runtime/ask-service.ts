@@ -46,18 +46,6 @@ export interface EnsureSessionResult {
 	created: boolean;
 }
 
-function ensureInlineReferences(answer: string, citations: string[]): string {
-	if (citations.length === 0) {
-		return answer;
-	}
-	const hasInlineReferences = citations.some((citation) => answer.includes(`[${citation}]`));
-	if (hasInlineReferences) {
-		return answer;
-	}
-	const suffix = citations.map((citation) => `[${citation}]`).join(" ");
-	return `${answer}\n\nEvidence: ${suffix}`;
-}
-
 export class AskService {
 	private readonly persistThinking: boolean;
 	private readonly now: () => Date;
@@ -116,7 +104,7 @@ export class AskService {
 			throw new Error("Model returned an empty answer.");
 		}
 
-		const assistantAnswer = ensureInlineReferences(response.answer, response.citations);
+		const assistantAnswer = response.answer;
 		const assistantTurn = this.createTurn({
 			sessionId: session.id,
 			role: "assistant",

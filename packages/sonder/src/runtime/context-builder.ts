@@ -67,6 +67,6 @@ export function renderAskPrompt(question: string, context: AskContext): string {
 		context.extractedText || "(empty)",
 		"",
 		`Question: ${question}`,
-		"Answer with inline evidence references like [ann:<id>] [art:<id>] when possible.",
+		"Use item context naturally. Cite evidence only when it materially helps clarity.",
 	].join("\n");
 }

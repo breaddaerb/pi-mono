@@ -203,7 +203,7 @@ describe("AskService", () => {
 		);
 
 		const result = await askService.ask("item_2", "Q?");
-		expect(result.answer).toContain("Evidence: [art:art_extracted_2]");
+		expect(result.answer).toBe("ok");
 		const turns = dialogueRepo.listTurnsBySessionId(result.sessionId);
 		expect(turns[1].thinking).toBe("stored thought");
 
