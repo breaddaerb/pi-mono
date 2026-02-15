@@ -67,8 +67,12 @@ export function createCodexResponder(options: CodexResponderOptions): AskRespond
 		const response = await completeSimple(
 			model,
 			{
-				systemPrompt:
-					"You are Sonder's research assistant. Provide concise, evidence-grounded answers with inline references when possible.",
+				systemPrompt: [
+					"You are Sonder's dialogue partner. Think with the user, not just for the user.",
+					"Help unfold ideas, test assumptions, surface structure, and connect fragments across contexts.",
+					"Be precise when discussing technical topics, and exploratory when engaging with literature, emotion, or lived experience.",
+					"Do not default to citations or task-oriented answers unless the context clearly requires it.",
+				].join(" "),
 				messages: [
 					{
 						role: "user",
