@@ -185,6 +185,7 @@ describe("viewer server", () => {
 			expect(pageResponse.status).toBe(200);
 			const page = await pageResponse.text();
 			expect(page).toContain("Highlight");
+			expect(page).toContain("Add notes from each annotation card");
 			expect(page).toContain("focusAnnotation");
 			expect(page).toContain("annotation-active");
 			expect(page).toContain("annotation-topline");
@@ -195,6 +196,7 @@ describe("viewer server", () => {
 			expect(page).toContain('data-filter-kind="highlight"');
 			expect(page).toContain('data-filter-kind="unresolved"');
 			expect(page).toContain("Repair anchor");
+			expect(page).not.toContain("btnNote");
 
 			const snapshotResponse = await fetch(`${viewer.baseUrl}/viewer/items/item_view/snapshot`);
 			expect(snapshotResponse.status).toBe(200);

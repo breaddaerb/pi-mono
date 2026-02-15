@@ -154,7 +154,7 @@ In item mode, action panel supports: `Open Viewer | Delete Item | Exit`.
 
 1. In item mode, tap `Open Viewer`
 2. Select text in snapshot
-3. Create highlight / underline / note
+3. Create highlight / underline; add notes from annotation cards in sidebar
 4. Ask follow-up questions in Telegram plain text
 
 Viewer note: snapshot rendering disables active scripts/iframes/refresh directives at view time to keep pages stable for reading and annotation.

@@ -169,9 +169,8 @@ function renderViewerPage(itemId: string): string {
           <div class="toolbar">
             <button id="btnHighlight">Highlight</button>
             <button id="btnUnderline">Underline</button>
-            <button id="btnNote">Note</button>
           </div>
-          <div class="hint">Selection is captured from the left snapshot frame.</div>
+          <div class="hint">Selection is captured from the left snapshot frame. Add notes from each annotation card.</div>
           <hr />
           <h3 class="ann-title">Annotations</h3>
           <div id="filters" class="filters">
@@ -451,8 +450,16 @@ function renderViewerPage(itemId: string): string {
             actions.appendChild(repair);
           }
 
+          const note = document.createElement('button');
+          note.textContent = annotation.comment ? 'Edit note' : 'Add note';
+          note.onclick = async (event) => {
+            event.stopPropagation();
+            await editAnnotationNote(annotation);
+          };
+          actions.appendChild(note);
+
           const edit = document.createElement('button');
-          edit.textContent = 'Edit';
+          edit.textContent = 'Edit text';
           edit.onclick = (event) => {
             event.stopPropagation();
             editAnnotation(annotation);
@@ -668,39 +675,6 @@ function renderViewerPage(itemId: string): string {
           return;
         }
 
-        if (type === 'note') {
-          const note = window.prompt('Add note for selected text', '');
-          if (note === null) {
-            return;
-          }
-          const normalizedSelected = selectedText.replace(/\\s+/g, ' ').trim();
-          const target = annotationsCache.find((annotation) =>
-            typeof annotation.text === 'string' &&
-            annotation.text.replace(/\\s+/g, ' ').trim() === normalizedSelected &&
-            (annotation.type === 'highlight' || annotation.type === 'underline'),
-          );
-          if (!target) {
-            window.alert('Create a highlight or underline on this sentence first, then add a note.');
-            return;
-          }
-
-          const patchResponse = await fetch('/viewer/api/annotations/' + encodeURIComponent(target.id), {
-            method: 'PATCH',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              text: target.text,
-              comment: (note || '').trim() || null,
-            }),
-          });
-          if (!patchResponse.ok) {
-            const content = await patchResponse.text();
-            window.alert(content || 'Failed to add note');
-            return;
-          }
-          await loadAnnotations();
-          return;
-        }
-
         const response = await fetch('/viewer/api/items/' + encodeURIComponent(itemId) + '/annotations', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -724,6 +698,24 @@ function renderViewerPage(itemId: string): string {
         refreshSnapshot();
       }
 
+      async function editAnnotationNote(annotation) {
+        const nextComment = window.prompt('Add note for this annotation', annotation.comment || '');
+        if (nextComment === null) {
+          return;
+        }
+        const response = await fetch('/viewer/api/annotations/' + encodeURIComponent(annotation.id), {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ comment: nextComment.trim() || null }),
+        });
+        if (!response.ok) {
+          const content = await response.text();
+          window.alert(content || 'Failed to update note');
+          return;
+        }
+        await loadAnnotations();
+      }
+
       async function editAnnotation(annotation) {
         const nextText = window.prompt('Edit annotation text', annotation.text || annotation.comment || '');
         if (nextText === null) {
@@ -745,7 +737,6 @@ function renderViewerPage(itemId: string): string {
 
       document.getElementById('btnHighlight').onclick = () => createAnnotation('highlight');
       document.getElementById('btnUnderline').onclick = () => createAnnotation('underline');
-      document.getElementById('btnNote').onclick = () => createAnnotation('note');
 
       if (filterRoot) {
         const buttons = filterRoot.querySelectorAll('.filter-btn');
