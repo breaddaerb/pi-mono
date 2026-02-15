@@ -124,7 +124,7 @@ Behavior:
 
 1. `/find <query>` or `/list`
 2. Use buttons (`Time`, `Source`, `Tag`, `Sort`, `Clear`, `Prev`, `Next`)
-3. Tap `N Open` on a result row
+3. Tap `N Open` on a result row (or `N Delete` to remove it)
 4. You enter item mode
 
 ### D) Session behavior and defaults (important)
@@ -140,6 +140,8 @@ Behavior:
 
 - `/open` (without itemId) starts general chat mode
 - each `/open` call creates a new general session
+
+In item mode, action panel supports: `Open Viewer | Delete Item | Exit`.
 
 ### F) Viewer loop
 

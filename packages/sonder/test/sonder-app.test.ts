@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -285,6 +285,44 @@ describe("SonderApp", () => {
 		} finally {
 			app.close();
 		}
+	});
+
+	it("deletes item with cascading data and artifacts", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+		});
+
+		const saved = await app.saveFromInput({
+			url: "https://example.com/delete-cascade",
+		});
+		app.createAnnotation({
+			itemId: saved.itemId,
+			type: "note",
+			text: "delete me",
+			tags: ["tmp"],
+		});
+		const opened = app.openItemDialogue(saved.itemId);
+		await app.askInItemDialogue(saved.itemId, opened.sessionId, "question");
+
+		const deleted = app.deleteItem(saved.itemId);
+		expect(deleted.deleted).toBe(true);
+		expect(app.itemsRepo.findById(saved.itemId)).toBeNull();
+		expect(app.artifactsRepo.listByItemId(saved.itemId)).toHaveLength(0);
+		expect(app.annotationsRepo.listByItemId(saved.itemId)).toHaveLength(0);
+		expect(app.dialogueRepo.listSessionsByItemId(saved.itemId)).toHaveLength(0);
+		expect(existsSync(join(root, "data", "items", saved.itemId))).toBe(false);
+
+		const deletedAgain = app.deleteItem(saved.itemId);
+		expect(deletedAgain.deleted).toBe(false);
+		app.close();
 	});
 
 	it("creates lists and deletes annotations via commands", async () => {

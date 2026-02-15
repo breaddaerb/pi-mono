@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { type ParseTelegramCommandError, parseTelegramCommand } from "../commands/parse-command.js";
@@ -20,6 +20,11 @@ export interface SonderDialogueSessionInfo {
 	itemId: string;
 	sessionId: string;
 	created: boolean;
+}
+
+export interface SonderDeleteItemResult {
+	itemId: string;
+	deleted: boolean;
 }
 
 export interface SonderGeneralChatTurn {
@@ -244,6 +249,19 @@ export class SonderApp {
 	listAnnotations(itemId: string): SonderAnnotationItem[] {
 		this.ensureItemExists(itemId);
 		return this.annotationsRepo.listByItemId(itemId).map((annotation) => this.toAnnotationItem(annotation));
+	}
+
+	deleteItem(itemId: string): SonderDeleteItemResult {
+		const item = this.itemsRepo.findById(itemId);
+		if (!item) {
+			return { itemId, deleted: false };
+		}
+		const deleted = this.itemsRepo.deleteById(itemId);
+		if (deleted) {
+			const itemDirectory = join(this.dataRootDir, "items", itemId);
+			rmSync(itemDirectory, { recursive: true, force: true });
+		}
+		return { itemId, deleted };
 	}
 
 	updateAnnotation(input: {

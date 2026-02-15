@@ -303,7 +303,9 @@ interface HistoryMenuState {
 
 type CallbackAction =
 	| "find_open"
+	| "find_del"
 	| "list_open"
+	| "list_del"
 	| "menu_time"
 	| "menu_time_set"
 	| "menu_source"
@@ -323,7 +325,8 @@ type CallbackAction =
 	| "hist_next"
 	| "hist_back"
 	| "ctx_exit"
-	| "ctx_viewer";
+	| "ctx_viewer"
+	| "ctx_del";
 
 interface CallbackPayload {
 	version: "v1";
@@ -416,7 +419,9 @@ function parseCallbackPayload(data: string): CallbackPayload | null {
 	const action = parts[2];
 	if (
 		action !== "find_open" &&
+		action !== "find_del" &&
 		action !== "list_open" &&
+		action !== "list_del" &&
 		action !== "menu_time" &&
 		action !== "menu_time_set" &&
 		action !== "menu_source" &&
@@ -436,7 +441,8 @@ function parseCallbackPayload(data: string): CallbackPayload | null {
 		action !== "hist_next" &&
 		action !== "hist_back" &&
 		action !== "ctx_exit" &&
-		action !== "ctx_viewer"
+		action !== "ctx_viewer" &&
+		action !== "ctx_del"
 	) {
 		return null;
 	}
@@ -754,6 +760,10 @@ export class TelegramBotRunner {
 				text: `${index + 1} Open`,
 				callbackData: buildCallbackPayload(menu.kind === "find" ? "find_open" : "list_open", menuId, index + 1),
 			},
+			{
+				text: `${index + 1} Delete`,
+				callbackData: buildCallbackPayload(menu.kind === "find" ? "find_del" : "list_del", menuId, index + 1),
+			},
 		]);
 		const tagLabel = menu.tag ? `Tag:${menu.tag}` : "Tag:Any";
 		return [
@@ -1005,9 +1015,13 @@ export class TelegramBotRunner {
 		const row = includeViewer
 			? [
 					{ text: "Open Viewer", callbackData: buildCallbackPayload("ctx_viewer", "ctx", 0) },
+					{ text: "Delete Item", callbackData: buildCallbackPayload("ctx_del", "ctx", 0) },
 					{ text: "Exit", callbackData: buildCallbackPayload("ctx_exit", "ctx", 0) },
 				]
-			: [{ text: "Exit", callbackData: buildCallbackPayload("ctx_exit", "ctx", 0) }];
+			: [
+					{ text: "Delete Item", callbackData: buildCallbackPayload("ctx_del", "ctx", 0) },
+					{ text: "Exit", callbackData: buildCallbackPayload("ctx_exit", "ctx", 0) },
+				];
 		return [row];
 	}
 
@@ -1042,6 +1056,34 @@ export class TelegramBotRunner {
 		return `────────────\n💬 In: General Chat\n────────────\n\n${answer}`;
 	}
 
+	private deleteItemFromMenus(chatId: number, itemId: string): void {
+		const itemMenus = this.itemMenus.get(chatId);
+		if (!itemMenus) {
+			return;
+		}
+		for (const [, menu] of itemMenus) {
+			menu.entries = menu.entries.filter((entry) => entry.id !== itemId);
+			if (menu.page > 0) {
+				const totalPages = Math.max(1, Math.ceil(menu.entries.length / menu.pageSize));
+				menu.page = Math.min(menu.page, totalPages - 1);
+			}
+		}
+	}
+
+	private async deleteItemAndNotify(chatId: number, itemId: string): Promise<void> {
+		const deleted = this.app.deleteItem(itemId);
+		if (!deleted.deleted) {
+			await this.api.sendMessage(chatId, "Item not found or already deleted.");
+			return;
+		}
+		const mode = this.getChatMode(chatId);
+		if (mode?.mode === "item" && mode.itemId === itemId) {
+			this.clearChatMode(chatId);
+		}
+		this.deleteItemFromMenus(chatId, itemId);
+		await this.api.sendMessage(chatId, "Item deleted (including annotations, dialogue, and artifacts).");
+	}
+
 	private async handleContextAction(chatId: number, action: CallbackAction): Promise<void> {
 		const mode = this.getChatMode(chatId);
 		if (!mode) {
@@ -1052,6 +1094,15 @@ export class TelegramBotRunner {
 		if (action === "ctx_exit") {
 			this.clearChatMode(chatId);
 			await this.api.sendMessage(chatId, "Exited active dialogue mode.");
+			return;
+		}
+
+		if (action === "ctx_del") {
+			if (mode.mode !== "item") {
+				await this.api.sendMessage(chatId, "Delete is available in item mode only.");
+				return;
+			}
+			await this.deleteItemAndNotify(chatId, mode.itemId);
 			return;
 		}
 
@@ -1278,6 +1329,17 @@ export class TelegramBotRunner {
 			const itemId = this.getMenuItemId(menu, payload.argument);
 			if (!itemId) {
 				await this.api.sendMessage(chatId, "Invalid selection. Use /list or /find again.");
+				return;
+			}
+
+			if (payload.action === "find_del" || payload.action === "list_del") {
+				await this.deleteItemAndNotify(chatId, itemId);
+				const refreshedMenu = this.getItemMenu(chatId, payload.menuId);
+				if (refreshedMenu) {
+					const responseText = this.buildDiscoveryMenuText(refreshedMenu);
+					const inlineKeyboard = this.buildDiscoveryMenuKeyboard(payload.menuId, refreshedMenu);
+					await this.api.sendMessage(chatId, responseText, { inlineKeyboard });
+				}
 				return;
 			}
 

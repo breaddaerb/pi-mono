@@ -4,6 +4,7 @@ export {
 	type SonderAppPaths,
 	type SonderCommandError,
 	type SonderCommandResult,
+	type SonderDeleteItemResult,
 	type SonderFindItem,
 	type SonderListItem,
 	type SonderProcessResult,

@@ -17,6 +17,7 @@ export class ItemsRepo {
 	private readonly insertStatement;
 	private readonly selectByIdStatement;
 	private readonly listRecentStatement;
+	private readonly deleteByIdStatement;
 
 	constructor(private readonly database: DatabaseSync) {
 		this.insertStatement = this.database.prepare(`
@@ -25,6 +26,7 @@ export class ItemsRepo {
 		`);
 		this.selectByIdStatement = this.database.prepare("SELECT * FROM items WHERE id = ?");
 		this.listRecentStatement = this.database.prepare("SELECT * FROM items ORDER BY created_at DESC LIMIT ?");
+		this.deleteByIdStatement = this.database.prepare("DELETE FROM items WHERE id = ?");
 	}
 
 	create(item: Item): void {
@@ -52,6 +54,11 @@ export class ItemsRepo {
 		const normalizedLimit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 20;
 		const rows = this.listRecentStatement.all(normalizedLimit);
 		return rows.map((row) => mapItemRow(row as unknown as ItemRow));
+	}
+
+	deleteById(id: string): boolean {
+		const result = this.deleteByIdStatement.run(id);
+		return result.changes > 0;
 	}
 }
 

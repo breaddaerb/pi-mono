@@ -243,6 +243,51 @@ describe("TelegramBotRunner", () => {
 		app.close();
 	});
 
+	it("supports delete callback from discovery menu without exposing item id", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "stub",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+		app.itemsRepo.create({
+			id: "item_find_del",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com/delete-me",
+			whyNote: null,
+			tags: ["tmp"],
+			topic: null,
+			space: null,
+		});
+
+		const api = new FakeTelegramApi([{ updateId: 1, type: "message", chatId: 78, text: "/list" }]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		const deleteCallbackData = api.sent[0].inlineKeyboard?.[0]?.[1]?.callbackData;
+		if (!deleteCallbackData) {
+			throw new Error("Expected delete callback data");
+		}
+
+		api.enqueueUpdates([
+			{ updateId: 2, type: "callback", chatId: 78, callbackQueryId: "cb_del", data: deleteCallbackData },
+		]);
+		await runner.pollOnce();
+
+		expect(api.answeredCallbackIds).toContain("cb_del");
+		expect(api.sent[1].text).toContain("Item deleted");
+		expect(api.sent[2].text).toContain("No results match current filters");
+		expect(app.itemsRepo.findById("item_find_del")).toBeNull();
+		app.close();
+	});
+
 	it("returns expired menu guidance for stale find callback", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);
@@ -306,7 +351,8 @@ describe("TelegramBotRunner", () => {
 		expect(api.sent[0].text).toContain("🗂 Recent items");
 		expect(api.sent[0].text).not.toContain("item_list");
 		expect(api.sent[0].inlineKeyboard?.[0]?.[0]?.callbackData).toMatch(/^sx:v1:list_open:/);
-		expect(api.sent[0].inlineKeyboard?.[0]?.[1]).toBeUndefined();
+		expect(api.sent[0].inlineKeyboard?.[0]?.[1]?.text).toBe("1 Delete");
+		expect(api.sent[0].inlineKeyboard?.[0]?.[1]?.callbackData).toMatch(/^sx:v1:list_del:/);
 		app.close();
 	});
 
@@ -749,14 +795,63 @@ describe("TelegramBotRunner", () => {
 		const runner = new TelegramBotRunner(api, app);
 		await runner.pollOnce();
 
-		expect(api.sent[0].inlineKeyboard?.[0]?.[0]?.text).toBe("Exit");
-		expect(api.sent[0].inlineKeyboard?.[0]?.[1]).toBeUndefined();
+		expect(api.sent[0].inlineKeyboard?.[0]?.[0]?.text).toBe("Delete Item");
+		expect(api.sent[0].inlineKeyboard?.[0]?.[1]?.text).toBe("Exit");
 		expect(api.sent[0].text).toContain("Session: active");
 		expect(api.sent[0].text).toContain("Recent activity:");
 		expect(api.sent[1].text).toContain("🧠 In: item_panel");
 		expect(api.sent[1].text).toContain("Item answer: hello panel");
 		expect(api.sent[2].text).toContain("Exited active dialogue mode");
 		expect(api.answeredCallbackIds).toEqual(expect.arrayContaining(["cb_ctx_exit"]));
+		app.close();
+	});
+
+	it("supports delete action from item mode panel", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "stub",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		app.itemsRepo.create({
+			id: "item_panel_delete",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com/panel-delete",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_panel_delete",
+			itemId: "item_panel_delete",
+			kind: "extracted-text",
+			path: join(root, "missing-panel-delete.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 35, text: "/open item_panel_delete" },
+			{ updateId: 2, type: "callback", chatId: 35, callbackQueryId: "cb_ctx_del", data: "sx:v1:ctx_del:ctx:0" },
+			{ updateId: 3, type: "message", chatId: 35, text: "hello" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[1].text).toContain("Item deleted");
+		expect(api.sent[2].text).toContain("No active dialogue");
+		expect(app.itemsRepo.findById("item_panel_delete")).toBeNull();
+		expect(api.answeredCallbackIds).toContain("cb_ctx_del");
 		app.close();
 	});
 
