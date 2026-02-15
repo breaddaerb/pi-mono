@@ -212,6 +212,81 @@ describe("SonderApp", () => {
 		app.close();
 	});
 
+	it("applies xiaohongshu cleanup only for retrieval without mutating stored extracted text", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+		});
+
+		app.itemsRepo.create({
+			id: "item_xhs_find",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://www.xiaohongshu.com/discovery/item/abc",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		const extractedPath = join(root, "xhs-extracted.txt");
+		writeFileSync(
+			extractedPath,
+			"小红书 创作中心 沪ICP备13030189号 沪B2-20150021 (沪)网械平台备字[2019]第00006号 (沪)-经营性-2023-0144 沪网文(2024)1344-086号 网信算备310101216601302230019号 上海市互联网举报中心 网上有害信息举报专区 © 2014-2024 行吟信息科技（上海）有限公司\n真正内容：奖励函数需要防止被 hack。",
+			"utf8",
+		);
+		app.artifactsRepo.create({
+			id: "art_xhs_find",
+			itemId: "item_xhs_find",
+			kind: "extracted-text",
+			path: extractedPath,
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
+		try {
+			const boilerplateFind = await app.processCommand("/find 沪ICP备 5");
+			expect(boilerplateFind.ok).toBe(true);
+			if (!boilerplateFind.ok || boilerplateFind.value.type !== "find") {
+				throw new Error("Expected find result");
+			}
+			expect(boilerplateFind.value.items).toHaveLength(0);
+
+			const filingFind = await app.processCommand("/find 沪B2-20150021 5");
+			expect(filingFind.ok).toBe(true);
+			if (!filingFind.ok || filingFind.value.type !== "find") {
+				throw new Error("Expected find result");
+			}
+			expect(filingFind.value.items).toHaveLength(0);
+
+			const licenseFind = await app.processCommand("/find 营业执照 5");
+			expect(licenseFind.ok).toBe(true);
+			if (!licenseFind.ok || licenseFind.value.type !== "find") {
+				throw new Error("Expected find result");
+			}
+			expect(licenseFind.value.items).toHaveLength(0);
+
+			const contentFind = await app.processCommand("/find 奖励函数 5");
+			expect(contentFind.ok).toBe(true);
+			if (!contentFind.ok || contentFind.value.type !== "find") {
+				throw new Error("Expected find result");
+			}
+			expect(contentFind.value.items[0]?.id).toBe("item_xhs_find");
+
+			const storedRaw = readFileSync(extractedPath, "utf8");
+			expect(storedRaw).toContain("沪ICP备13030189号");
+		} finally {
+			app.close();
+		}
+	});
+
 	it("creates lists and deletes annotations via commands", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
 		tempDirs.push(root);
@@ -373,6 +448,80 @@ describe("SonderApp", () => {
 			expect(readFileSync(extracted.path, "utf8")).toContain("manual evidence line 1");
 		} finally {
 			app.close();
+		}
+	});
+
+	it("auto-uses cleaned xiaohongshu evidence when source is blocked", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+			snapshotFetchImpl: async () =>
+				new Response(
+					"<html><body>小红书 创作中心 业务合作 沪ICP备13030189号 沪B2-20150021 (沪)网械平台备字[2019]第00006号 (沪)-经营性-2023-0144 沪网文(2024)1344-086号 网信算备310101216601302230019号 上海市互联网举报中心 网上有害信息举报专区 © 2014-2024 行吟信息科技（上海）有限公司 地址：上海市黄浦区马当路388号C座 电话：9501-3888 重复信息 重复信息 重复信息。<p>真正内容：强化学习环境设计要先简后繁，奖励函数需要阶段化并避免被 hack，动作空间应先离散后连续。</p></body></html>",
+					{
+						status: 200,
+						headers: { "content-type": "text/html; charset=utf-8" },
+					},
+				),
+		});
+
+		try {
+			const saveResult = await app.saveFromInput({
+				url: "https://www.xiaohongshu.com/discovery/item/test-auto-evidence",
+			});
+			expect(saveResult.sourcePlatform).toBe("xiaohongshu");
+			expect(saveResult.sourceStatus).toBe("blocked");
+			expect(saveResult.evidenceType).toBe("pasted_text");
+			expect(saveResult.needsUserEvidence).toBe(false);
+
+			const artifacts = app.artifactsRepo.listByItemId(saveResult.itemId);
+			const evidence = artifacts.find((artifact) => artifact.kind === "evidence-md");
+			if (!evidence) {
+				throw new Error("Expected evidence artifact");
+			}
+			const evidenceText = readFileSync(evidence.path, "utf8");
+			expect(evidenceText).toContain("真正内容");
+			expect(evidenceText).not.toContain("沪ICP备");
+		} finally {
+			app.close();
+		}
+	});
+
+	it("marks blocked source as unusable and requests pasted evidence", async () => {
+		const server = await withServer((_request, response) => {
+			response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+			response.end("<html><body><h1>环境异常</h1><p>完成验证后即可继续访问</p><p>去验证</p></body></html>");
+		});
+
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+		});
+
+		try {
+			const saveResult = await app.saveFromInput({
+				url: `${server.baseUrl}/wechat-like`,
+			});
+			expect(saveResult.sourceStatus).toBe("login_required");
+			expect(saveResult.needsUserEvidence).toBe(true);
+			expect(saveResult.evidenceType).toBe("fallback_text");
+		} finally {
+			app.close();
+			await server.close();
 		}
 	});
 

@@ -40,6 +40,15 @@ export {
 	extractReadableTextFromHtml,
 } from "./snapshot/index.js";
 export {
+	captureFromSource,
+	detectSourcePlatform,
+	type SourceAdapter,
+	type SourceCaptureInput,
+	type SourceCaptureResult,
+	type SourcePlatform,
+	type SourceStatus,
+} from "./sources/index.js";
+export {
 	AnnotationsRepo,
 	ArtifactsRepo,
 	applyMigrations,

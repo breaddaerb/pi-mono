@@ -782,7 +782,17 @@ function renderViewerPage(itemId: string): string {
 </html>`;
 }
 
+function sanitizeSnapshotHtmlForViewer(html: string): string {
+	let sanitized = html;
+	sanitized = sanitized.replaceAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
+	sanitized = sanitized.replaceAll(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, "");
+	sanitized = sanitized.replaceAll(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, "");
+	sanitized = sanitized.replaceAll(/<meta\b[^>]*http-equiv=["']?refresh["']?[^>]*>/gi, "");
+	return sanitized;
+}
+
 function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
+	const sanitized = sanitizeSnapshotHtmlForViewer(html);
 	const overlayScript = `
 <style id="sonder-overlay-style">
 .sonder-overlay-highlight { background: #ffe58f; }
@@ -1037,10 +1047,10 @@ function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
 })();
 </script>`;
 
-	if (html.includes("</body>")) {
-		return html.replace("</body>", `${overlayScript}</body>`);
+	if (sanitized.includes("</body>")) {
+		return sanitized.replace("</body>", `${overlayScript}</body>`);
 	}
-	return `${html}\n${overlayScript}`;
+	return `${sanitized}\n${overlayScript}`;
 }
 
 function parseCreatePayload(body: string): CreateViewerAnnotationPayload {

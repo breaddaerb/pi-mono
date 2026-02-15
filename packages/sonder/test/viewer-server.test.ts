@@ -144,7 +144,11 @@ describe("viewer server", () => {
 
 		const snapshotPath = join(root, "snapshot.html");
 		const extractedPath = join(root, "extracted.txt");
-		writeFileSync(snapshotPath, "<html><body><h1>Snapshot</h1><p>Main claim lives here.</p></body></html>", "utf8");
+		writeFileSync(
+			snapshotPath,
+			"<html><head><meta http-equiv=\"refresh\" content=\"0;url=https://x.com\"></head><body><h1>Snapshot</h1><p>Main claim lives here.</p><script>document.body.innerHTML='blanked';</script><iframe src='https://example.com'></iframe></body></html>",
+			"utf8",
+		);
 		writeFileSync(extractedPath, "Snapshot Main claim lives here.", "utf8");
 		app.itemsRepo.create({
 			id: "item_view",
@@ -197,6 +201,10 @@ describe("viewer server", () => {
 			const snapshotHtml = await snapshotResponse.text();
 			expect(snapshotHtml).toContain("sonder-overlay-script");
 			expect(snapshotHtml).toContain("findRangeAcrossTextNodes");
+			expect(snapshotHtml).toContain("Main claim lives here.");
+			expect(snapshotHtml).not.toContain("document.body.innerHTML='blanked'");
+			expect(snapshotHtml).not.toContain("<iframe");
+			expect(snapshotHtml).not.toContain('http-equiv="refresh"');
 			expect(page).toContain("iframe.style.visibility = 'hidden'");
 
 			const createResponse = await fetch(`${viewer.baseUrl}/viewer/api/items/item_view/annotations`, {

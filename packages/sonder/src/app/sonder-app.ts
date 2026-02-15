@@ -4,7 +4,8 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { type ParseTelegramCommandError, parseTelegramCommand } from "../commands/parse-command.js";
 import { type AskResponder, AskService } from "../runtime/ask-service.js";
-import { captureSnapshot, type SnapshotFailureCode } from "../snapshot/snapshot-service.js";
+import { captureFromSource, type SourcePlatform, type SourceStatus } from "../sources/index.js";
+import { cleanExtractedTextForPlatform, detectSourcePlatform } from "../sources/utils.js";
 import {
 	AnnotationsRepo,
 	ArtifactsRepo,
@@ -86,9 +87,9 @@ export interface SonderFindItem {
 	snippets: string[];
 }
 
-export type SonderSaveSourceStatus = "ok" | "login_required" | "blocked" | "timeout" | "fetch_failed";
+export type SonderSaveSourceStatus = SourceStatus;
 
-export type SonderSourcePlatform = "twitter" | "wechat" | "xiaohongshu" | "arxiv" | "web";
+export type SonderSourcePlatform = SourcePlatform;
 
 export type SonderEvidenceType = "snapshot" | "pasted_text" | "fallback_text";
 
@@ -470,23 +471,31 @@ export class SonderApp {
 		};
 		this.itemsRepo.create(item);
 
-		const snapshot = await captureSnapshot({
+		const sourceCapture = await captureFromSource({
 			itemId,
 			url,
 			dataRootDir: this.dataRootDir,
 			fetchImpl: this.options.snapshotFetchImpl,
 		});
+		const snapshot = sourceCapture.snapshot;
 
 		const normalizedPastedText = this.normalizePastedText(pastedText);
+		const autoDerivedEvidenceText = this.deriveAutoEvidenceText({
+			platform: sourceCapture.platform,
+			usable: sourceCapture.usable,
+			extractedTextPath: snapshot.extractedTextPath,
+		});
+		const effectiveEvidenceText = normalizedPastedText ?? autoDerivedEvidenceText;
 		const usePastedEvidence =
-			Boolean(normalizedPastedText) && (snapshot.usedFallback || this.shouldForcePastedEvidenceForUrl(url));
+			Boolean(effectiveEvidenceText) &&
+			(!sourceCapture.usable || this.shouldPreferPastedEvidenceForPlatform(sourceCapture.platform));
 		let extractedTextPath = snapshot.extractedTextPath;
 		let evidenceMdPath: string | null = null;
-		if (usePastedEvidence && normalizedPastedText) {
+		if (usePastedEvidence && effectiveEvidenceText) {
 			evidenceMdPath = join(snapshot.itemDirectory, "evidence.md");
 			extractedTextPath = join(snapshot.itemDirectory, "evidence-extracted.txt");
-			writeFileSync(evidenceMdPath, normalizedPastedText, "utf8");
-			writeFileSync(extractedTextPath, normalizedPastedText, "utf8");
+			writeFileSync(evidenceMdPath, effectiveEvidenceText, "utf8");
+			writeFileSync(extractedTextPath, effectiveEvidenceText, "utf8");
 		}
 
 		const artifactIds: string[] = [];
@@ -526,18 +535,14 @@ export class SonderApp {
 			artifactIds.push(fallbackArtifact.id);
 		}
 
-		const sourcePlatform = this.detectSourcePlatform(url);
-		let sourceStatus = this.mapFailureCodeToSourceStatus(snapshot.failureCode);
-		let sourceStatusReason = snapshot.failureReason;
-		if (usePastedEvidence && sourceStatus === "ok" && this.shouldForcePastedEvidenceForUrl(url)) {
-			sourceStatus = "login_required";
-			sourceStatusReason = "Restricted source captured with pasted evidence override.";
-		}
+		const sourcePlatform = sourceCapture.platform;
+		const sourceStatus = sourceCapture.status;
+		const sourceStatusReason = sourceCapture.reason;
 		const evidenceType: SonderEvidenceType = usePastedEvidence
 			? "pasted_text"
-			: snapshot.usedFallback
-				? "fallback_text"
-				: "snapshot";
+			: sourceCapture.usable
+				? "snapshot"
+				: "fallback_text";
 
 		return {
 			type: "save",
@@ -550,7 +555,7 @@ export class SonderApp {
 			sourceStatus,
 			sourceStatusReason,
 			evidenceType,
-			needsUserEvidence: snapshot.usedFallback && !usePastedEvidence,
+			needsUserEvidence: !sourceCapture.usable && !usePastedEvidence,
 		};
 	}
 
@@ -623,7 +628,7 @@ export class SonderApp {
 				}
 			}
 
-			const extractedText = this.readExtractedTextForItem(item.id);
+			const extractedText = this.readExtractedTextForItem(item);
 			if (extractedText.length > 0) {
 				const contentMatches = this.collectMatchedTerms(extractedText.toLowerCase(), queryTerms);
 				if (contentMatches.length > 0) {
@@ -709,34 +714,8 @@ export class SonderApp {
 		return suffixed.length <= 100 ? suffixed : `${suffixed.slice(0, 97)}...`;
 	}
 
-	private detectSourcePlatform(url: string): SonderSourcePlatform {
-		try {
-			const host = new URL(url).host.toLowerCase();
-			if (host === "x.com" || host === "twitter.com") {
-				return "twitter";
-			}
-			if (host === "mp.weixin.qq.com") {
-				return "wechat";
-			}
-			if (host.includes("xiaohongshu.com")) {
-				return "xiaohongshu";
-			}
-			if (host === "arxiv.org") {
-				return "arxiv";
-			}
-		} catch {
-			// no-op
-		}
-		return "web";
-	}
-
-	private shouldForcePastedEvidenceForUrl(url: string): boolean {
-		try {
-			const host = new URL(url).host.toLowerCase();
-			return host === "x.com" || host === "twitter.com" || host === "mp.weixin.qq.com";
-		} catch {
-			return false;
-		}
+	private shouldPreferPastedEvidenceForPlatform(platform: SonderSourcePlatform): boolean {
+		return platform === "twitter" || platform === "wechat";
 	}
 
 	private normalizePastedText(text: string | null): string | null {
@@ -747,32 +726,52 @@ export class SonderApp {
 		return normalized.length > 0 ? normalized : null;
 	}
 
-	private mapFailureCodeToSourceStatus(code: SnapshotFailureCode): SonderSaveSourceStatus {
-		if (code === "none") {
-			return "ok";
+	private deriveAutoEvidenceText(input: {
+		platform: SonderSourcePlatform;
+		usable: boolean;
+		extractedTextPath: string;
+	}): string | null {
+		if (input.usable) {
+			return null;
 		}
-		if (code === "login_required") {
-			return "login_required";
+		if (input.platform !== "xiaohongshu") {
+			return null;
 		}
-		if (code === "blocked") {
-			return "blocked";
+		try {
+			const rawText = readFileSync(input.extractedTextPath, "utf8");
+			const cleaned = cleanExtractedTextForPlatform(input.platform, rawText).trim();
+			if (cleaned.length >= 60) {
+				return cleaned;
+			}
+			const fallbackCleaned = rawText
+				.replaceAll(/沪ICP备\d+号?|沪B2-\d+|网信算备\d+号|沪网文\(\d{4}\)\d+-\d+号/gi, " ")
+				.replaceAll(/\(沪\)网械平台备字\[\d{4}\]第\d+号|\(沪\)-经营性-\d{4}-\d+/gi, " ")
+				.replaceAll(/上海市互联网举报中心|网上有害信息举报专区|行吟信息科技（上海）有限公司/gi, " ")
+				.replaceAll(/地址：上海市黄浦区马当路388号C座|电话：\d+-\d+/gi, " ")
+				.replaceAll(/©\s*\d{4}\s*-\s*\d{4}/gi, " ")
+				.replaceAll(/小红书|创作中心|业务合作|发现|发布|通知|登录|更多/gi, " ")
+				.replaceAll(/\s+/g, " ")
+				.trim();
+			if (fallbackCleaned.length < 60) {
+				return null;
+			}
+			return fallbackCleaned;
+		} catch {
+			return null;
 		}
-		if (code === "timeout") {
-			return "timeout";
-		}
-		if (code === "unsupported_content_type") {
-			return "blocked";
-		}
-		return "fetch_failed";
 	}
 
-	private readExtractedTextForItem(itemId: string): string {
-		const artifact = this.artifactsRepo.listByItemId(itemId).find((candidate) => candidate.kind === "extracted-text");
+	private readExtractedTextForItem(item: Item): string {
+		const artifact = this.artifactsRepo
+			.listByItemId(item.id)
+			.find((candidate) => candidate.kind === "extracted-text");
 		if (!artifact) {
 			return "";
 		}
 		try {
-			return readFileSync(artifact.path, "utf8");
+			const rawText = readFileSync(artifact.path, "utf8");
+			const platform = detectSourcePlatform(item.originalUrl);
+			return cleanExtractedTextForPlatform(platform, rawText);
 		} catch {
 			return "";
 		}

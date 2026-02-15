@@ -21,6 +21,18 @@ Telegram-first conversational PKM for item-anchored thinking.
 - Storage: SQLite + local artifact files
 - Retrieval: keyword-first (non-embedding)
 
+## Source support matrix (current)
+
+| Source | Direct capture quality | Typical status | Notes |
+| --- | --- | --- | --- |
+| arXiv | High | `ok` | HTML pages usually capture cleanly |
+| Generic web | Medium | `ok` / `blocked` | Varies by site structure and anti-bot policy |
+| Xiaohongshu | Medium | `ok` / `login_required` / `blocked` | Uses retrieval-time boilerplate cleanup (incl. common filing/license noise); when blocked but extractable, Sonder may auto-derive cleaned evidence via pasted-evidence path |
+| WeChat article | Low-Medium | `login_required` (common) | Verification walls are common; prefer pasted evidence when blocked |
+| X/Twitter | Low-Medium | `login_required` / `fetch_failed` (common) | Login-gated pages are common; pasted evidence path is supported |
+
+When status indicates the link is not usable, Sonder asks for pasted evidence unless it can auto-derive usable cleaned evidence (currently for some Xiaohongshu pages).
+
 ## Quick start
 
 From repo root:
@@ -105,7 +117,8 @@ Behavior:
 - Sonder stores pasted text as evidence (`evidence.md` + extracted text)
 - Viewer prefers pasted evidence content when available
 - Opens item mode immediately when pasted evidence is present
-- If no pasted text is provided and fetch fails, Sonder saves fallback metadata and asks you to re-send with pasted text
+- For some XHS pages classified as noisy/blocked, Sonder can auto-derive cleaned evidence text and route it through the same evidence path
+- If no usable evidence is available, Sonder saves fallback metadata and asks you to re-send with pasted text
 
 ### C) Discover first, then open
 
@@ -134,6 +147,8 @@ Behavior:
 2. Select text in snapshot
 3. Create highlight / underline / note
 4. Ask follow-up questions in Telegram plain text
+
+Viewer note: snapshot rendering disables active scripts/iframes/refresh directives at view time to keep pages stable for reading and annotation.
 
 ## Discovery UX details
 

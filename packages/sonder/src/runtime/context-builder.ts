@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { cleanExtractedTextForPlatform, detectSourcePlatform } from "../sources/utils.js";
 import type { Annotation, DialogueTurn, Item } from "../types.js";
 
 export interface AskContextInput {
@@ -16,16 +17,18 @@ export interface AskContext {
 	extractedText: string;
 }
 
-function readExtractedText(path: string | null, maxCharacters: number): string {
+function readExtractedText(item: Item, path: string | null, maxCharacters: number): string {
 	if (!path) {
 		return "";
 	}
 	try {
 		const text = readFileSync(path, "utf8");
-		if (text.length <= maxCharacters) {
-			return text;
+		const platform = detectSourcePlatform(item.originalUrl);
+		const cleaned = cleanExtractedTextForPlatform(platform, text);
+		if (cleaned.length <= maxCharacters) {
+			return cleaned;
 		}
-		return text.slice(0, maxCharacters);
+		return cleaned.slice(0, maxCharacters);
 	} catch {
 		return "";
 	}
@@ -37,7 +40,7 @@ export function buildAskContext(input: AskContextInput): AskContext {
 		item: input.item,
 		annotationEvidence: input.annotations,
 		dialogueHistory: input.dialogueTurns,
-		extractedText: readExtractedText(input.extractedTextPath, maxCharacters),
+		extractedText: readExtractedText(input.item, input.extractedTextPath, maxCharacters),
 	};
 }
 
