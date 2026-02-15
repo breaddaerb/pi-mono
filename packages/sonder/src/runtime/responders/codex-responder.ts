@@ -1,6 +1,20 @@
 import { type AssistantMessage, completeSimple, getModels, type Message, type Model } from "@mariozechner/pi-ai";
 import type { AskResponder } from "../index.js";
 
+export interface CodexModelOption {
+	id: string;
+}
+
+export interface CodexModelSelector {
+	listModels: () => CodexModelOption[];
+	getSelectedModelId: () => string;
+	setSelectedModelId: (modelId: string) => boolean;
+}
+
+function listCodexModelOptions(): CodexModelOption[] {
+	return getModels("openai-codex").map((model) => ({ id: model.id }));
+}
+
 function resolveCodexModel(modelId?: string): Model<"openai-codex-responses"> {
 	const models = getModels("openai-codex");
 	if (models.length === 0) {
@@ -14,6 +28,29 @@ function resolveCodexModel(modelId?: string): Model<"openai-codex-responses"> {
 		throw new Error(`Unknown Codex model: ${modelId}`);
 	}
 	return selected;
+}
+
+export function createCodexModelSelector(initialModelId?: string): CodexModelSelector {
+	const models = listCodexModelOptions();
+	if (models.length === 0) {
+		throw new Error("No openai-codex models available in registry.");
+	}
+	let selectedModelId = initialModelId ?? models[0].id;
+	if (!models.some((model) => model.id === selectedModelId)) {
+		throw new Error(`Unknown Codex model: ${selectedModelId}`);
+	}
+	return {
+		listModels: () => listCodexModelOptions(),
+		getSelectedModelId: () => selectedModelId,
+		setSelectedModelId: (modelId: string) => {
+			const exists = listCodexModelOptions().some((model) => model.id === modelId);
+			if (!exists) {
+				return false;
+			}
+			selectedModelId = modelId;
+			return true;
+		},
+	};
 }
 
 function extractTextContent(message: AssistantMessage): string {
@@ -53,12 +90,13 @@ export interface CodexResponderOptions {
 	token?: string;
 	getToken?: () => Promise<string | undefined>;
 	modelId?: string;
+	getModelId?: () => string | undefined;
 	reasoning?: "minimal" | "low" | "medium" | "high";
 }
 
 export function createCodexResponder(options: CodexResponderOptions): AskResponder {
-	const model = resolveCodexModel(options.modelId);
 	return async (input) => {
+		const model = resolveCodexModel(options.getModelId ? options.getModelId() : options.modelId);
 		const resolvedToken = options.token ?? (options.getToken ? await options.getToken() : undefined);
 		if (!resolvedToken) {
 			throw new Error("No Codex token available. Set SONDER_CODEX_TOKEN or login via pi OAuth.");

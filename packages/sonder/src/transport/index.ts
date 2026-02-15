@@ -1,1 +1,7 @@
-export { type TelegramApi, TelegramBotRunner, TelegramHttpApi, type TelegramRunnerOptions } from "./telegram.js";
+export {
+	type TelegramApi,
+	TelegramBotRunner,
+	TelegramHttpApi,
+	type TelegramRunnerOptions,
+	type TelegramRuntimeModelSelector,
+} from "./telegram.js";

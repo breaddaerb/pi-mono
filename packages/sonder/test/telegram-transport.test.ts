@@ -3,7 +3,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SonderApp } from "../src/app/index.js";
-import { type TelegramApi, TelegramBotRunner } from "../src/transport/index.js";
+import { type TelegramApi, TelegramBotRunner, type TelegramRuntimeModelSelector } from "../src/transport/index.js";
+
+class FakeModelSelector implements TelegramRuntimeModelSelector {
+	constructor(
+		private readonly modelIds: string[],
+		private selectedModelId: string,
+	) {}
+
+	listModels(): Array<{ id: string }> {
+		return this.modelIds.map((id) => ({ id }));
+	}
+
+	getSelectedModelId(): string {
+		return this.selectedModelId;
+	}
+
+	setSelectedModelId(modelId: string): boolean {
+		if (!this.modelIds.includes(modelId)) {
+			return false;
+		}
+		this.selectedModelId = modelId;
+		return true;
+	}
+}
 
 class FakeTelegramApi implements TelegramApi {
 	constructor(
@@ -578,6 +601,66 @@ describe("TelegramBotRunner", () => {
 		const runner2 = new TelegramBotRunner(explicitApi, app);
 		await runner2.pollOnce();
 		expect(explicitApi.sent[0].text).toContain("History for");
+		app.close();
+	});
+
+	it("supports /models command and callback-based model switching", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "stub",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		const modelSelector = new FakeModelSelector(["gpt-5.2", "gpt-5.2-mini"], "gpt-5.2");
+		const api = new FakeTelegramApi([{ updateId: 1, type: "message", chatId: 62, text: "/models" }]);
+		const runner = new TelegramBotRunner(api, app, { modelSelector });
+		await runner.pollOnce();
+
+		expect(api.sent[0].text).toContain("Models (Codex)");
+		expect(api.sent[0].text).toContain("Current: gpt-5.2");
+		const switchData = api.sent[0].inlineKeyboard?.[1]?.[0]?.callbackData;
+		if (!switchData) {
+			throw new Error("Expected model switch callback data");
+		}
+
+		api.enqueueUpdates([
+			{ updateId: 2, type: "callback", chatId: 62, callbackQueryId: "cb_model", data: switchData },
+			{ updateId: 3, type: "message", chatId: 62, text: "/where" },
+		]);
+		await runner.pollOnce();
+
+		expect(api.sent[1].text).toContain("Current: gpt-5.2-mini");
+		expect(api.sent[2].text).toContain("Model: gpt-5.2-mini");
+		expect(modelSelector.getSelectedModelId()).toBe("gpt-5.2-mini");
+		app.close();
+	});
+
+	it("shows /models unavailable guidance without codex selector", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "stub",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		const api = new FakeTelegramApi([{ updateId: 1, type: "message", chatId: 63, text: "/models" }]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[0].text).toContain("codex responder mode only");
 		app.close();
 	});
 

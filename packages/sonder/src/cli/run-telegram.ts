@@ -2,7 +2,7 @@ import type { Writable } from "node:stream";
 import { SonderApp } from "../app/index.js";
 import { TelegramBotRunner, TelegramHttpApi } from "../transport/telegram.js";
 import { startViewerServer } from "../viewer/index.js";
-import { createResponderFromEnv } from "./responder-from-env.js";
+import { createRuntimeResponderFromEnv } from "./responder-from-env.js";
 
 interface ParsedTelegramArgs {
 	rootDir: string;
@@ -113,9 +113,10 @@ export async function runTelegramMode(
 		return 1;
 	}
 
+	const runtimeResponder = createRuntimeResponderFromEnv(process.env);
 	const app = new SonderApp({
 		paths: { rootDir: parsed.rootDir },
-		responder: createResponderFromEnv(process.env),
+		responder: runtimeResponder.responder,
 	});
 
 	const proxyUrl = getProxyUrl(process.env);
@@ -135,6 +136,7 @@ export async function runTelegramMode(
 	const runner = new TelegramBotRunner(api, app, {
 		stderr,
 		getViewerItemUrl: viewerServer.getItemUrl,
+		modelSelector: runtimeResponder.modelSelector,
 	});
 
 	try {

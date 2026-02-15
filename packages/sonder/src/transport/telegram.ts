@@ -77,11 +77,18 @@ export interface TelegramApi {
 	answerCallbackQuery(callbackQueryId: string): Promise<void>;
 }
 
+export interface TelegramRuntimeModelSelector {
+	listModels: () => Array<{ id: string }>;
+	getSelectedModelId: () => string;
+	setSelectedModelId: (modelId: string) => boolean;
+}
+
 export interface TelegramRunnerOptions {
 	longPollSeconds?: number;
 	idleDelayMs?: number;
 	stderr?: Writable;
 	getViewerItemUrl?: (itemId: string) => string;
+	modelSelector?: TelegramRuntimeModelSelector | null;
 }
 
 export interface TelegramHttpApiOptions {
@@ -293,6 +300,12 @@ interface SessionMenuState {
 	expiresAtMs: number;
 }
 
+interface ModelMenuState {
+	modelIds: string[];
+	createdAtMs: number;
+	expiresAtMs: number;
+}
+
 interface HistoryMenuState {
 	sessionId: string;
 	page: number;
@@ -306,6 +319,7 @@ type CallbackAction =
 	| "find_del"
 	| "list_open"
 	| "list_del"
+	| "model_set"
 	| "menu_time"
 	| "menu_time_set"
 	| "menu_source"
@@ -353,6 +367,7 @@ type ModeCommand =
 	| { type: "open"; itemId?: string }
 	| { type: "exit" }
 	| { type: "where" }
+	| { type: "models" }
 	| { type: "sessions"; itemId?: string }
 	| { type: "resume"; sessionId: string }
 	| { type: "history"; sessionId?: string };
@@ -396,6 +411,9 @@ function parseModeCommand(text: string): ModeCommand | null {
 	if (parts[0] === "/where") {
 		return { type: "where" };
 	}
+	if (parts[0] === "/models") {
+		return { type: "models" };
+	}
 	if (parts[0] === "/sessions") {
 		return { type: "sessions", itemId: parts[1] };
 	}
@@ -422,6 +440,7 @@ function parseCallbackPayload(data: string): CallbackPayload | null {
 		action !== "find_del" &&
 		action !== "list_open" &&
 		action !== "list_del" &&
+		action !== "model_set" &&
 		action !== "menu_time" &&
 		action !== "menu_time_set" &&
 		action !== "menu_source" &&
@@ -551,10 +570,12 @@ export class TelegramBotRunner {
 	private readonly idleDelayMs: number;
 	private readonly stderr: Writable;
 	private readonly getViewerItemUrl?: (itemId: string) => string;
+	private readonly modelSelector: TelegramRuntimeModelSelector | null;
 	private readonly chatModes = new Map<number, ChatModeState>();
 	private readonly chatModeStateRepo: ChatModeStateRepo;
 	private readonly itemMenus = new Map<number, Map<string, ItemMenuState>>();
 	private readonly sessionMenus = new Map<number, Map<string, SessionMenuState>>();
+	private readonly modelMenus = new Map<number, Map<string, ModelMenuState>>();
 	private readonly historyMenus = new Map<number, Map<string, HistoryMenuState>>();
 
 	constructor(
@@ -566,6 +587,7 @@ export class TelegramBotRunner {
 		this.idleDelayMs = options.idleDelayMs ?? 250;
 		this.stderr = options.stderr ?? process.stderr;
 		this.getViewerItemUrl = options.getViewerItemUrl;
+		this.modelSelector = options.modelSelector ?? null;
 		this.chatModeStateRepo = new ChatModeStateRepo(this.app.database);
 	}
 
@@ -959,6 +981,63 @@ export class TelegramBotRunner {
 		return menu;
 	}
 
+	private createModelMenu(chatId: number, modelIds: string[]): string {
+		const chatMenus = this.modelMenus.get(chatId) ?? new Map<string, ModelMenuState>();
+		const createdAtMs = Date.now();
+		const menuId = randomUUID().slice(0, 8);
+		chatMenus.set(menuId, {
+			modelIds,
+			createdAtMs,
+			expiresAtMs: createdAtMs + FIND_MENU_TTL_MS,
+		});
+		this.modelMenus.set(chatId, chatMenus);
+		return menuId;
+	}
+
+	private getModelMenu(chatId: number, menuId: string): ModelMenuState | null {
+		const chatMenus = this.modelMenus.get(chatId);
+		if (!chatMenus) {
+			return null;
+		}
+		const menu = chatMenus.get(menuId);
+		if (!menu) {
+			return null;
+		}
+		if (Date.now() > menu.expiresAtMs) {
+			chatMenus.delete(menuId);
+			return null;
+		}
+		return menu;
+	}
+
+	private getModelIdByIndex(menu: ModelMenuState, argument: string): string | null {
+		const index = Number.parseInt(argument, 10);
+		if (!Number.isFinite(index) || index <= 0) {
+			return null;
+		}
+		return menu.modelIds[index - 1] ?? null;
+	}
+
+	private buildModelsMenuText(modelIds: string[], selectedModelId: string): string {
+		const lines = modelIds.map(
+			(modelId, index) => `${index + 1}. ${modelId}${modelId === selectedModelId ? " ✅" : ""}`,
+		);
+		return `Models (Codex)\nCurrent: ${selectedModelId}\n\n${lines.join("\n")}`;
+	}
+
+	private buildModelsMenuKeyboard(
+		menuId: string,
+		modelIds: string[],
+		selectedModelId: string,
+	): TelegramInlineKeyboard {
+		return modelIds.map((modelId, index) => [
+			{
+				text: `${index + 1} Use${modelId === selectedModelId ? " ✅" : ""}`,
+				callbackData: buildCallbackPayload("model_set", menuId, index + 1),
+			},
+		]);
+	}
+
 	private createHistoryMenu(chatId: number, sessionId: string, page: number, pageSize: number): string {
 		const chatMenus = this.historyMenus.get(chatId) ?? new Map<string, HistoryMenuState>();
 		const createdAtMs = Date.now();
@@ -1128,6 +1207,35 @@ export class TelegramBotRunner {
 			}
 			if (payload.action.startsWith("ctx_")) {
 				await this.handleContextAction(chatId, payload.action);
+				return;
+			}
+
+			if (payload.action === "model_set") {
+				if (!this.modelSelector) {
+					await this.api.sendMessage(chatId, "Model selector is available in codex responder mode only.");
+					return;
+				}
+				const menu = this.getModelMenu(chatId, payload.menuId);
+				if (!menu) {
+					await this.api.sendMessage(chatId, "This models menu expired. Use /models again.");
+					return;
+				}
+				const modelId = this.getModelIdByIndex(menu, payload.argument);
+				if (!modelId) {
+					await this.api.sendMessage(chatId, "Invalid model selection. Use /models again.");
+					return;
+				}
+				const changed = this.modelSelector.setSelectedModelId(modelId);
+				if (!changed) {
+					await this.api.sendMessage(chatId, "Failed to set model. Use /models again.");
+					return;
+				}
+				const modelIds = this.modelSelector.listModels().map((model) => model.id);
+				const selectedModelId = this.modelSelector.getSelectedModelId();
+				const nextMenuId = this.createModelMenu(chatId, modelIds);
+				await this.api.sendMessage(chatId, this.buildModelsMenuText(modelIds, selectedModelId), {
+					inlineKeyboard: this.buildModelsMenuKeyboard(nextMenuId, modelIds, selectedModelId),
+				});
 				return;
 			}
 
@@ -1547,18 +1655,37 @@ export class TelegramBotRunner {
 
 		if (command.type === "where") {
 			const mode = this.getChatMode(chatId);
+			const modelLine = this.modelSelector ? `\nModel: ${this.modelSelector.getSelectedModelId()}` : "";
 			if (!mode) {
-				await this.api.sendMessage(chatId, "No active dialogue mode.");
+				await this.api.sendMessage(chatId, `No active dialogue mode.${modelLine}`);
 				return;
 			}
 			if (mode.mode === "item") {
 				await this.api.sendMessage(
 					chatId,
-					`Active item dialogue\nItem: ${mode.itemId}\nSession: ${mode.sessionId}`,
+					`Active item dialogue\nItem: ${mode.itemId}\nSession: ${mode.sessionId}${modelLine}`,
 				);
 				return;
 			}
-			await this.api.sendMessage(chatId, `Active general dialogue\nSession: ${mode.sessionId}`);
+			await this.api.sendMessage(chatId, `Active general dialogue\nSession: ${mode.sessionId}${modelLine}`);
+			return;
+		}
+
+		if (command.type === "models") {
+			if (!this.modelSelector) {
+				await this.api.sendMessage(chatId, "Model selector is available in codex responder mode only.");
+				return;
+			}
+			const modelIds = this.modelSelector.listModels().map((model) => model.id);
+			if (modelIds.length === 0) {
+				await this.api.sendMessage(chatId, "No codex models available.");
+				return;
+			}
+			const selectedModelId = this.modelSelector.getSelectedModelId();
+			const menuId = this.createModelMenu(chatId, modelIds);
+			await this.api.sendMessage(chatId, this.buildModelsMenuText(modelIds, selectedModelId), {
+				inlineKeyboard: this.buildModelsMenuKeyboard(menuId, modelIds, selectedModelId),
+			});
 			return;
 		}
 

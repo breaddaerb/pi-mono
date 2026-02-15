@@ -74,6 +74,7 @@ SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890"
 /sessions
 /history
 /where
+/models
 /exit
 ```
 
@@ -136,14 +137,20 @@ Behavior:
   - run `/sessions` in item mode
   - choose `Resume` for a listed session, or `New Session`
 
-### E) General chat mode
+### E) Model selection (Codex mode)
+
+- `/models` shows available Codex models and current active model
+- use inline `N Use` buttons to switch model
+- selection applies to subsequent dialogue turns in current runtime
+
+### F) General chat mode
 
 - `/open` (without itemId) starts general chat mode
 - each `/open` call creates a new general session
 
 In item mode, action panel supports: `Open Viewer | Delete Item | Exit`.
 
-### F) Viewer loop
+### G) Viewer loop
 
 1. In item mode, tap `Open Viewer`
 2. Select text in snapshot
