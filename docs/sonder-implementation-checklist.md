@@ -19,6 +19,7 @@ These should remain true unless intentionally redesigned.
 - Active per-chat mode/session is persisted and restored across restarts
 - Telegram transport consumes app-level APIs (does not reach into app DB/repo internals)
 - Command parsing is centralized in `src/commands` (core + mode commands)
+- Command dispatch uses exact command tokens (no prefix-style matching like `/saveX`)
 - `/ask` remains compatibility fallback; Telegram primary UX is open-first contextual asking
 - Retrieval remains lean non-embedding for current phase
 

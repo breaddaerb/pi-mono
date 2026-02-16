@@ -312,22 +312,24 @@ function parseAnnotationCommand(input: string): ParseTelegramCommandResult {
 
 export function parseTelegramCommand(input: string): ParseTelegramCommandResult {
 	const raw = input.trim();
-	if (raw.startsWith("/save")) {
+	const [command] = raw.split(/\s+/, 1);
+
+	if (command === "/save") {
 		return parseSaveCommand(raw);
 	}
-	if (raw.startsWith("/ask")) {
+	if (command === "/ask") {
 		return parseAskCommand(raw);
 	}
-	if (raw.startsWith("/list")) {
+	if (command === "/list") {
 		return parseListCommand(raw);
 	}
-	if (raw.startsWith("/find")) {
+	if (command === "/find") {
 		return parseFindCommand(raw);
 	}
-	if (raw.startsWith("/annotate")) {
+	if (command === "/annotate") {
 		return parseAnnotateCommand(raw);
 	}
-	if (raw.startsWith("/ann")) {
+	if (command === "/ann") {
 		return parseAnnotationCommand(raw);
 	}
 	return {

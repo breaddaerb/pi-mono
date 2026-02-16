@@ -140,4 +140,16 @@ describe("parseTelegramCommand", () => {
 		if (result.ok) throw new Error("Expected unsupported command to fail");
 		expect(result.error.code).toBe("UNSUPPORTED_COMMAND");
 	});
+
+	it("rejects prefix-like commands that are not exact command tokens", () => {
+		const saveLike = parseTelegramCommand("/saveX https://example.com");
+		expect(saveLike.ok).toBe(false);
+		if (saveLike.ok) throw new Error("Expected /saveX to be unsupported");
+		expect(saveLike.error.code).toBe("UNSUPPORTED_COMMAND");
+
+		const annLike = parseTelegramCommand("/annx list item_1");
+		expect(annLike.ok).toBe(false);
+		if (annLike.ok) throw new Error("Expected /annx to be unsupported");
+		expect(annLike.error.code).toBe("UNSUPPORTED_COMMAND");
+	});
 });
