@@ -89,6 +89,8 @@ describe("storage smoke", () => {
 			provider: "openai-codex",
 			citations: ["ann:ann_1", "art:art_1"],
 			thinking: null,
+			status: "completed",
+			errorMessage: null,
 			createdAt: "2026-02-14T01:00:04.000Z",
 		};
 		dialogueRepo.createTurn(turn);

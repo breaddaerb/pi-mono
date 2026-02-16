@@ -604,6 +604,130 @@ describe("TelegramBotRunner", () => {
 		app.close();
 	});
 
+	it("renders failed assistant turns in item history", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => {
+				if (input.question === "fail now") {
+					throw new Error("provider timeout");
+				}
+				return {
+					answer: `Item answer: ${input.question}`,
+					model: "stub",
+					provider: "stub",
+					citations: [],
+				};
+			},
+		});
+
+		app.itemsRepo.create({
+			id: "item_hist_failed",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com/hist-failed",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_hist_failed",
+			itemId: "item_hist_failed",
+			kind: "extracted-text",
+			path: join(root, "missing-hist-failed.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 64, text: "/open item_hist_failed" },
+			{ updateId: 2, type: "message", chatId: 64, text: "fail now" },
+			{ updateId: 3, type: "message", chatId: 64, text: "/history" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[1].text).toContain("provider timeout");
+		expect(api.sent[2].text).toContain("[failed]");
+		expect(api.sent[2].text).toContain("failed: provider timeout");
+
+		const sessionId = app.listItemDialogues("item_hist_failed")[0]?.sessionId;
+		if (!sessionId) {
+			throw new Error("Expected history session");
+		}
+		const turns = app.dialogueRepo.listTurnsBySessionId(sessionId);
+		expect(turns).toHaveLength(2);
+		expect(turns[1].status).toBe("failed");
+		expect(turns[1].errorMessage).toContain("provider timeout");
+		app.close();
+	});
+
+	it("renders failed turns after runner restart from persisted history", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => {
+				if (input.question === "fail restart") {
+					throw new Error("transient provider error");
+				}
+				return {
+					answer: `Item answer: ${input.question}`,
+					model: "stub",
+					provider: "stub",
+					citations: [],
+				};
+			},
+		});
+
+		app.itemsRepo.create({
+			id: "item_hist_failed_restart",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com/hist-failed-restart",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_hist_failed_restart",
+			itemId: "item_hist_failed_restart",
+			kind: "extracted-text",
+			path: join(root, "missing-hist-failed-restart.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
+		const firstApi = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 65, text: "/open item_hist_failed_restart" },
+			{ updateId: 2, type: "message", chatId: 65, text: "fail restart" },
+		]);
+		const firstRunner = new TelegramBotRunner(firstApi, app);
+		await firstRunner.pollOnce();
+		expect(firstApi.sent[1].text).toContain("transient provider error");
+
+		const sessionId = app.listItemDialogues("item_hist_failed_restart")[0]?.sessionId;
+		if (!sessionId) {
+			throw new Error("Expected persisted failed session");
+		}
+
+		const secondApi = new FakeTelegramApi([
+			{ updateId: 3, type: "message", chatId: 65, text: `/history ${sessionId}` },
+		]);
+		const secondRunner = new TelegramBotRunner(secondApi, app);
+		await secondRunner.pollOnce();
+		expect(secondApi.sent[0].text).toContain("[failed]");
+		expect(secondApi.sent[0].text).toContain("failed: transient provider error");
+		app.close();
+	});
+
 	it("supports /models command and callback-based model switching", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);

@@ -18,6 +18,8 @@ interface DialogueTurnRow {
 	provider: string;
 	citations_json: string;
 	thinking: string | null;
+	status: string;
+	error_message: string | null;
 	created_at: string;
 }
 
@@ -26,6 +28,8 @@ export class DialogueRepo {
 	private readonly selectSessionByIdStatement;
 	private readonly selectSessionsByItemIdStatement;
 	private readonly insertTurnStatement;
+	private readonly markTurnCompletedStatement;
+	private readonly markTurnFailedStatement;
 	private readonly selectTurnByIdStatement;
 	private readonly selectTurnsBySessionIdStatement;
 
@@ -40,8 +44,30 @@ export class DialogueRepo {
 		);
 
 		this.insertTurnStatement = this.database.prepare(`
-			INSERT INTO dialogue_turns (id, session_id, role, content, model, provider, citations_json, thinking, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO dialogue_turns (
+				id,
+				session_id,
+				role,
+				content,
+				model,
+				provider,
+				citations_json,
+				thinking,
+				status,
+				error_message,
+				created_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`);
+		this.markTurnCompletedStatement = this.database.prepare(`
+			UPDATE dialogue_turns
+			SET content = ?, model = ?, provider = ?, citations_json = ?, thinking = ?, status = 'completed', error_message = NULL
+			WHERE id = ?
+		`);
+		this.markTurnFailedStatement = this.database.prepare(`
+			UPDATE dialogue_turns
+			SET content = ?, model = ?, provider = ?, citations_json = ?, thinking = ?, status = 'failed', error_message = ?
+			WHERE id = ?
 		`);
 		this.selectTurnByIdStatement = this.database.prepare("SELECT * FROM dialogue_turns WHERE id = ?");
 		this.selectTurnsBySessionIdStatement = this.database.prepare(
@@ -76,8 +102,42 @@ export class DialogueRepo {
 			turn.provider,
 			toJsonString(turn.citations),
 			turn.thinking,
+			turn.status,
+			turn.errorMessage,
 			turn.createdAt,
 		);
+	}
+
+	markTurnCompleted(input: {
+		turnId: string;
+		content: string;
+		model: string;
+		provider: string;
+		citations: string[];
+		thinking: string | null;
+	}): boolean {
+		const result = this.markTurnCompletedStatement.run(
+			input.content,
+			input.model,
+			input.provider,
+			toJsonString(input.citations),
+			input.thinking,
+			input.turnId,
+		);
+		return result.changes > 0;
+	}
+
+	markTurnFailed(input: { turnId: string; errorMessage: string; model?: string; provider?: string }): boolean {
+		const result = this.markTurnFailedStatement.run(
+			"",
+			input.model ?? "failed-response",
+			input.provider ?? "runtime-error",
+			toJsonString([]),
+			null,
+			input.errorMessage,
+			input.turnId,
+		);
+		return result.changes > 0;
 	}
 
 	findTurnById(id: string): DialogueTurn | null {
@@ -113,6 +173,15 @@ function mapTurnRow(row: DialogueTurnRow): DialogueTurn {
 		provider: row.provider,
 		citations: parseStringArray(row.citations_json),
 		thinking: row.thinking,
+		status: normalizeTurnStatus(row.status),
+		errorMessage: row.error_message,
 		createdAt: row.created_at,
 	};
+}
+
+function normalizeTurnStatus(status: string): DialogueTurn["status"] {
+	if (status === "pending" || status === "failed" || status === "completed") {
+		return status;
+	}
+	return "completed";
 }

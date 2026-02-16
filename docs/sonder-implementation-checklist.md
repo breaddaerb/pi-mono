@@ -15,6 +15,7 @@ These should remain true unless intentionally redesigned.
 - Snapshot artifacts are durable local evidence (`snapshot.html + assets`, extracted text, fallback artifact)
 - Annotations are DB entities (do not mutate snapshot artifacts)
 - Context order for ask/runtime: annotations -> dialogue history -> extracted text
+- Dialogue turn lifecycle is explicit (`pending` -> `completed` or `failed`) and failures are persisted
 - Active per-chat mode/session is persisted and restored across restarts
 - `/ask` remains compatibility fallback; Telegram primary UX is open-first contextual asking
 - Retrieval remains lean non-embedding for current phase
@@ -59,6 +60,14 @@ These should remain true unless intentionally redesigned.
 - [ ] Structured logs/event tracing
 - [ ] Export flow (item + artifacts + annotations + dialogue JSON)
 - [ ] Retention/privacy controls
+
+### 3.4 Dialogue lifecycle correctness
+
+- [x] Dialogue turn status model exists (`pending | failed | completed`)
+- [x] Failed assistant turns persist failure metadata
+- [x] Ask flow transitions assistant turns from pending to completed/failed
+- [x] History rendering surfaces failed-turn status and error summary
+- [x] Tests cover success, responder-failure, and restart/read-path rendering of failed turns
 
 ## 4) Documentation contract
 

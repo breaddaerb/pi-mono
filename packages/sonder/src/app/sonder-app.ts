@@ -14,7 +14,7 @@ import {
 	DialogueRepo,
 	ItemsRepo,
 } from "../storage/index.js";
-import type { Annotation, Artifact, Item, ItemSourceType } from "../types.js";
+import type { Annotation, Artifact, DialogueTurnStatus, Item, ItemSourceType } from "../types.js";
 
 export interface SonderDialogueSessionInfo {
 	itemId: string;
@@ -45,6 +45,8 @@ export interface SonderDialogueTurnItem {
 	sessionId: string;
 	role: "user" | "assistant" | "system";
 	content: string;
+	status: DialogueTurnStatus;
+	errorMessage: string | null;
 	createdAt: string;
 }
 
@@ -212,6 +214,8 @@ export class SonderApp {
 			sessionId: turn.sessionId,
 			role: turn.role,
 			content: turn.content,
+			status: turn.status,
+			errorMessage: turn.errorMessage,
 			createdAt: turn.createdAt,
 		}));
 	}

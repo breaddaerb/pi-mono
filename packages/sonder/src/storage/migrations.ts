@@ -98,4 +98,11 @@ CREATE TABLE IF NOT EXISTS chat_mode_states (
 CREATE INDEX IF NOT EXISTS idx_chat_mode_states_updated_at ON chat_mode_states(updated_at);
 `,
 	},
+	{
+		version: 4,
+		sql: `
+ALTER TABLE dialogue_turns ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
+ALTER TABLE dialogue_turns ADD COLUMN error_message TEXT;
+`,
+	},
 ];

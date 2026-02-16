@@ -1102,7 +1102,16 @@ export class TelegramBotRunner {
 		const safePage = Math.max(0, Math.min(page, totalPages - 1));
 		const start = safePage * pageSize;
 		const pageTurns = turns.slice(start, start + pageSize);
-		const lines = pageTurns.map((turn, index) => `${index + 1}. ${turn.role}: ${truncateMiddle(turn.content, 280)}`);
+		const lines = pageTurns.map((turn, index) => {
+			const status = turn.status === "completed" ? "" : ` [${turn.status}]`;
+			const preview =
+				turn.status === "failed"
+					? turn.errorMessage
+						? `failed: ${turn.errorMessage}`
+						: "(assistant turn failed)"
+					: turn.content || "(empty)";
+			return `${index + 1}. ${turn.role}${status}: ${truncateMiddle(preview, 280)}`;
+		});
 		return {
 			text: `History for ${sessionId} (page ${safePage + 1}/${totalPages})\n\n${lines.join("\n\n")}`,
 			pageTurnsCount: pageTurns.length,
@@ -1461,7 +1470,10 @@ export class TelegramBotRunner {
 						await this.api.sendMessage(chatId, "History turn not found on this page.");
 						return;
 					}
-					const fullText = `History turn ${index} (page ${safePage + 1})\nRole: ${turn.role}\nTime: ${turn.createdAt}\n\n${turn.content}`;
+					const fullContent = turn.content || (turn.status === "failed" ? "(assistant turn failed)" : "(empty)");
+					const statusLine = `Status: ${turn.status}`;
+					const errorLine = turn.errorMessage ? `\nError: ${turn.errorMessage}` : "";
+					const fullText = `History turn ${index} (page ${safePage + 1})\nRole: ${turn.role}\n${statusLine}${errorLine}\nTime: ${turn.createdAt}\n\n${fullContent}`;
 					for (const chunk of splitForTelegram(fullText)) {
 						await this.api.sendMessage(chatId, chunk);
 					}

@@ -51,7 +51,12 @@ export function renderAskPrompt(question: string, context: AskContext): string {
 		return `- [ann:${annotation.id}] (${annotation.type}) ${text}${comment}`.trim();
 	});
 
-	const dialogueLines = context.dialogueHistory.map((turn) => `- (${turn.role}) ${turn.content}`);
+	const dialogueLines = context.dialogueHistory.map((turn) => {
+		const status = turn.status === "completed" ? "" : `:${turn.status}`;
+		const content =
+			turn.status === "failed" ? (turn.errorMessage ? `(failed: ${turn.errorMessage})` : "(failed)") : turn.content;
+		return `- (${turn.role}${status}) ${content}`;
+	});
 
 	return [
 		`Item: ${context.item.id}`,

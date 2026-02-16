@@ -90,39 +90,67 @@ export class AskService {
 			provider: "telegram",
 			citations: [],
 			thinking: null,
+			status: "completed",
+			errorMessage: null,
 		});
 		this.dependencies.dialogueRepo.createTurn(userTurn);
 
-		const response = await this.dependencies.responder({
-			itemId,
-			question,
-			prompt,
-			context,
-		});
-
-		if (response.answer.trim().length === 0) {
-			throw new Error("Model returned an empty answer.");
-		}
-
-		const assistantAnswer = response.answer;
 		const assistantTurn = this.createTurn({
 			sessionId: session.id,
 			role: "assistant",
-			content: assistantAnswer,
-			model: response.model,
-			provider: response.provider,
-			citations: response.citations,
-			thinking: this.persistThinking ? (response.thinking ?? null) : null,
+			content: "",
+			model: "pending-response",
+			provider: "pending-response",
+			citations: [],
+			thinking: null,
+			status: "pending",
+			errorMessage: null,
 		});
 		this.dependencies.dialogueRepo.createTurn(assistantTurn);
 
-		return {
-			sessionId: session.id,
-			userTurnId: userTurn.id,
-			assistantTurnId: assistantTurn.id,
-			answer: assistantAnswer,
-			citations: response.citations,
-		};
+		try {
+			const response = await this.dependencies.responder({
+				itemId,
+				question,
+				prompt,
+				context,
+			});
+
+			if (response.answer.trim().length === 0) {
+				throw new Error("Model returned an empty answer.");
+			}
+
+			const assistantAnswer = response.answer;
+			const markedCompleted = this.dependencies.dialogueRepo.markTurnCompleted({
+				turnId: assistantTurn.id,
+				content: assistantAnswer,
+				model: response.model,
+				provider: response.provider,
+				citations: response.citations,
+				thinking: this.persistThinking ? (response.thinking ?? null) : null,
+			});
+			if (!markedCompleted) {
+				throw new Error(`Failed to mark assistant turn as completed: ${assistantTurn.id}`);
+			}
+
+			return {
+				sessionId: session.id,
+				userTurnId: userTurn.id,
+				assistantTurnId: assistantTurn.id,
+				answer: assistantAnswer,
+				citations: response.citations,
+			};
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			const markedFailed = this.dependencies.dialogueRepo.markTurnFailed({
+				turnId: assistantTurn.id,
+				errorMessage: message,
+			});
+			if (!markedFailed) {
+				throw new Error(`Failed to persist failed assistant turn ${assistantTurn.id}. Original error: ${message}`);
+			}
+			throw error;
+		}
 	}
 
 	ensureSession(itemId: string, preferredSessionId?: string): EnsureSessionResult {

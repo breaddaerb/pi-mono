@@ -53,6 +53,8 @@ export interface DialogueSession {
 
 export type DialogueTurnRole = "user" | "assistant" | "system";
 
+export type DialogueTurnStatus = "pending" | "failed" | "completed";
+
 export interface DialogueTurn {
 	id: string;
 	sessionId: string;
@@ -62,5 +64,7 @@ export interface DialogueTurn {
 	provider: string;
 	citations: string[];
 	thinking: string | null;
+	status: DialogueTurnStatus;
+	errorMessage: string | null;
 	createdAt: string;
 }

@@ -71,6 +71,7 @@ export type {
 	DialogueSession,
 	DialogueTurn,
 	DialogueTurnRole,
+	DialogueTurnStatus,
 	Item,
 	ItemSourceType,
 } from "./types.js";

@@ -96,7 +96,10 @@ describe("AskService", () => {
 		const turns = dialogueRepo.listTurnsBySessionId(result.sessionId);
 		expect(turns).toHaveLength(2);
 		expect(turns[0].role).toBe("user");
+		expect(turns[0].status).toBe("completed");
 		expect(turns[1].role).toBe("assistant");
+		expect(turns[1].status).toBe("completed");
+		expect(turns[1].errorMessage).toBeNull();
 		expect(turns[1].thinking).toBeNull();
 
 		database.close();
@@ -149,6 +152,73 @@ describe("AskService", () => {
 		});
 
 		await expect(askService.ask("item_0", "Q?")).rejects.toThrow("Model returned an empty answer.");
+		const sessionId = dialogueRepo.listSessionsByItemId("item_0")[0]?.id;
+		if (!sessionId) {
+			throw new Error("Expected session after failed ask");
+		}
+		const turns = dialogueRepo.listTurnsBySessionId(sessionId);
+		expect(turns).toHaveLength(2);
+		expect(turns[0].role).toBe("user");
+		expect(turns[0].status).toBe("completed");
+		expect(turns[1].role).toBe("assistant");
+		expect(turns[1].status).toBe("failed");
+		expect(turns[1].errorMessage).toContain("Model returned an empty answer");
+		database.close();
+	});
+
+	it("persists failed assistant turn when responder throws", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-ask-"));
+		tempDirs.push(root);
+		const extractedPath = join(root, "data", "items", "item_throw", "extracted.txt");
+		mkdirSync(dirname(extractedPath), { recursive: true });
+		writeFileSync(extractedPath, "Text", "utf8");
+
+		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
+		const itemsRepo = new ItemsRepo(database);
+		const artifactsRepo = new ArtifactsRepo(database);
+		const annotationsRepo = new AnnotationsRepo(database);
+		const dialogueRepo = new DialogueRepo(database);
+
+		itemsRepo.create({
+			id: "item_throw",
+			createdAt: "2026-02-14T03:30:00.000Z",
+			sourceType: "web",
+			originalUrl: "https://example.com",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		artifactsRepo.create({
+			id: "art_extracted_throw",
+			itemId: "item_throw",
+			kind: "extracted-text",
+			path: extractedPath,
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: "2026-02-14T03:30:01.000Z",
+		});
+
+		const askService = new AskService({
+			itemsRepo,
+			artifactsRepo,
+			annotationsRepo,
+			dialogueRepo,
+			responder: async () => {
+				throw new Error("provider timeout");
+			},
+		});
+
+		await expect(askService.ask("item_throw", "Q?")).rejects.toThrow("provider timeout");
+		const sessionId = dialogueRepo.listSessionsByItemId("item_throw")[0]?.id;
+		if (!sessionId) {
+			throw new Error("Expected session after failed ask");
+		}
+		const turns = dialogueRepo.listTurnsBySessionId(sessionId);
+		expect(turns).toHaveLength(2);
+		expect(turns[1].status).toBe("failed");
+		expect(turns[1].errorMessage).toContain("provider timeout");
+
 		database.close();
 	});
 
@@ -205,6 +275,8 @@ describe("AskService", () => {
 		const result = await askService.ask("item_2", "Q?");
 		expect(result.answer).toBe("ok");
 		const turns = dialogueRepo.listTurnsBySessionId(result.sessionId);
+		expect(turns[1].status).toBe("completed");
+		expect(turns[1].errorMessage).toBeNull();
 		expect(turns[1].thinking).toBe("stored thought");
 
 		database.close();
