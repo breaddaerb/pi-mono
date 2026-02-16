@@ -1154,10 +1154,11 @@ export class TelegramBotRunner {
 					}
 					return;
 				}
+				const currentPage = this.getHistoryPage(menu.sessionId, menu.page, menu.pageSize);
 				const direction = payload.action === "hist_prev" ? -1 : 1;
-				const nextPage = Math.max(0, menu.page + direction);
-				const nextMenuId = this.createHistoryMenu(chatId, menu.sessionId, nextPage, menu.pageSize);
-				const historyPage = this.getHistoryPage(menu.sessionId, nextPage, menu.pageSize);
+				const clampedNextPage = Math.max(0, Math.min(currentPage.safePage + direction, currentPage.totalPages - 1));
+				const nextMenuId = this.createHistoryMenu(chatId, menu.sessionId, clampedNextPage, menu.pageSize);
+				const historyPage = this.getHistoryPage(menu.sessionId, clampedNextPage, menu.pageSize);
 				await this.api.sendMessage(chatId, historyPage.text, {
 					inlineKeyboard: this.buildHistoryKeyboard(nextMenuId, historyPage.pageTurnsCount),
 				});

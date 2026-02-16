@@ -61,6 +61,11 @@ Implemented capabilities:
 ### General chat
 - `/open` (no argument) starts a general-chat session
 - plain text then routes to that general session
+- general-mode history is bounded in `src/transport/telegram-mode-store.ts`:
+  - `MAX_GENERAL_HISTORY_ENTRIES = 24`
+  - `MAX_GENERAL_HISTORY_CHARACTERS = 12_000`
+- these bounds are for Telegram general mode persistence only (chat-mode-state)
+- item-mode dialogue remains persisted in `dialogue_turns` and is not limited by these constants
 
 ---
 

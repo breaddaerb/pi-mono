@@ -21,6 +21,8 @@ These should remain true unless intentionally redesigned.
 - Restored item-mode state is validated (item+session) and invalid state is auto-cleared
 - Telegram transport consumes app-level APIs (does not reach into app DB/repo internals)
 - Telegram transport helpers are modularized (callback parsing, renderers, mode store, input parsing)
+- General chat history persistence is bounded (entry + character caps)
+- History pagination state transitions are clamped to valid page bounds
 - Command parsing is centralized in `src/commands` (core + mode commands)
 - Command dispatch uses exact command tokens (no prefix-style matching like `/saveX`)
 - `/ask` remains compatibility fallback; Telegram primary UX is open-first contextual asking
@@ -58,6 +60,7 @@ These should remain true unless intentionally redesigned.
 - [x] Discovery pagination supports `Prev` + `Next`
 - [x] `/find` without query falls back to browse behavior
 - [x] Weighted keyword ranking with reasons/snippets
+- [x] Retrieval scaling draft exists (FTS schema + migration/backfill plan)
 - [ ] Further tune ranking/snippet presentation for clarity
 
 ### 3.3 Reliability/operations

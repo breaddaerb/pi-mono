@@ -147,6 +147,11 @@ Behavior:
 
 - `/open` (without itemId) starts general chat mode
 - each `/open` call creates a new general session
+- general-mode history is intentionally bounded in `TelegramChatModeStore`:
+  - `MAX_GENERAL_HISTORY_ENTRIES = 24`
+  - `MAX_GENERAL_HISTORY_CHARACTERS = 12_000`
+- these limits apply only to Telegram general mode (`/open` without itemId)
+- item dialogue turns are persisted separately in `dialogue_turns` and are not capped by these general-mode limits
 
 In item mode, action panel supports: `Open Viewer | Delete Item | Exit`.
 

@@ -473,6 +473,43 @@ describe("TelegramBotRunner", () => {
 		app.close();
 	});
 
+	it("bounds persisted general history size in chat mode state", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `General: ${input.question} :: ${"x".repeat(800)}`,
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		const chatId = 81;
+		const updates: Array<{ updateId: number; type: "message"; chatId: number; text: string }> = [
+			{ updateId: 1, type: "message", chatId, text: "/open" },
+		];
+		for (let index = 0; index < 20; index++) {
+			updates.push({ updateId: index + 2, type: "message", chatId, text: `msg-${index}` });
+		}
+
+		const api = new FakeTelegramApi(updates);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		const state = app.loadChatModeState(chatId);
+		expect(state).not.toBeNull();
+		if (!state || state.mode !== "general") {
+			throw new Error("Expected persisted general mode state");
+		}
+		expect(state.history.length).toBeLessThanOrEqual(24);
+		const totalChars = state.history.reduce((sum, turn) => sum + turn.content.length, 0);
+		expect(totalChars).toBeLessThanOrEqual(12_000);
+		app.close();
+	});
+
 	it("supports general dialogue mode via /open without item id", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);
@@ -1010,6 +1047,88 @@ describe("TelegramBotRunner", () => {
 		expect(api.sent[2].text).toContain("Role:");
 		expect(api.sent[3].text).toContain("History for");
 		expect(api.answeredCallbackIds).toEqual(expect.arrayContaining(["cb_full", "cb_next"]));
+		app.close();
+	});
+
+	it("clamps history page transitions at boundaries", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `Item answer: ${input.question}`,
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		app.itemsRepo.create({
+			id: "item_hist_clamp",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com/hist-clamp",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_hist_clamp",
+			itemId: "item_hist_clamp",
+			kind: "extracted-text",
+			path: join(root, "missing-hist-clamp.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+		const opened = app.openItemDialogue("item_hist_clamp");
+		for (let index = 0; index < 10; index++) {
+			await app.askInItemDialogue("item_hist_clamp", opened.sessionId, `q${index}`);
+		}
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 82, text: "/open item_hist_clamp" },
+			{ updateId: 2, type: "message", chatId: 82, text: "/history" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		let nextData = api.sent[1].inlineKeyboard?.[0]?.[1]?.callbackData;
+		let prevData = api.sent[1].inlineKeyboard?.[0]?.[0]?.callbackData;
+		if (!nextData || !prevData) {
+			throw new Error("Expected history navigation callbacks");
+		}
+
+		for (let index = 0; index < 5; index++) {
+			api.enqueueUpdates([
+				{
+					updateId: 3 + index,
+					type: "callback",
+					chatId: 82,
+					callbackQueryId: `cb_clamp_next_${index}`,
+					data: nextData,
+				},
+			]);
+			await runner.pollOnce();
+			const latest = api.sent[api.sent.length - 1];
+			nextData = latest.inlineKeyboard?.[0]?.[1]?.callbackData;
+			prevData = latest.inlineKeyboard?.[0]?.[0]?.callbackData;
+			if (!nextData || !prevData) {
+				throw new Error("Expected next/prev callbacks on paged history message");
+			}
+		}
+
+		const endPageText = api.sent[api.sent.length - 1]?.text ?? "";
+		expect(endPageText).toContain("page 3/3");
+
+		api.enqueueUpdates([
+			{ updateId: 100, type: "callback", chatId: 82, callbackQueryId: "cb_clamp_prev", data: prevData },
+		]);
+		await runner.pollOnce();
+		const afterPrevText = api.sent[api.sent.length - 1]?.text ?? "";
+		expect(afterPrevText).toContain("page 2/3");
 		app.close();
 	});
 

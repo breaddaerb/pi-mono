@@ -14,6 +14,29 @@ export interface ChatModeStateGeneral {
 
 export type ChatModeState = ChatModeStateItem | ChatModeStateGeneral;
 
+const MAX_GENERAL_HISTORY_ENTRIES = 24;
+const MAX_GENERAL_HISTORY_CHARACTERS = 12_000;
+
+function clampGeneralHistory(history: Array<{ role: "user" | "assistant"; content: string }>): Array<{
+	role: "user" | "assistant";
+	content: string;
+}> {
+	const normalized = history
+		.filter((entry) => (entry.role === "user" || entry.role === "assistant") && typeof entry.content === "string")
+		.map((entry) => ({ role: entry.role, content: entry.content }));
+
+	while (normalized.length > MAX_GENERAL_HISTORY_ENTRIES) {
+		normalized.shift();
+	}
+
+	const totalChars = (): number => normalized.reduce((sum, entry) => sum + entry.content.length, 0);
+	while (normalized.length > 2 && totalChars() > MAX_GENERAL_HISTORY_CHARACTERS) {
+		normalized.shift();
+	}
+
+	return normalized;
+}
+
 export class TelegramChatModeStore {
 	private readonly memoryModes = new Map<number, ChatModeState>();
 
@@ -40,22 +63,36 @@ export class TelegramChatModeStore {
 			return restored;
 		}
 
-		const restored: ChatModeState = { mode: "general", sessionId: stored.sessionId, history: stored.history };
+		const clampedHistory = clampGeneralHistory(stored.history);
+		if (clampedHistory.length !== stored.history.length) {
+			this.app.saveChatModeState(
+				{ chatId, mode: "general", itemId: null, sessionId: stored.sessionId, history: clampedHistory },
+				new Date().toISOString(),
+			);
+		}
+		const restored: ChatModeState = { mode: "general", sessionId: stored.sessionId, history: clampedHistory };
 		this.memoryModes.set(chatId, restored);
 		return restored;
 	}
 
 	set(chatId: number, mode: ChatModeState): void {
-		this.memoryModes.set(chatId, mode);
 		if (mode.mode === "item") {
+			this.memoryModes.set(chatId, mode);
 			this.app.saveChatModeState(
 				{ chatId, mode: "item", itemId: mode.itemId, sessionId: mode.sessionId, history: [] },
 				new Date().toISOString(),
 			);
 			return;
 		}
+		const clampedHistory = clampGeneralHistory(mode.history);
+		const normalizedMode: ChatModeState = {
+			mode: "general",
+			sessionId: mode.sessionId,
+			history: clampedHistory,
+		};
+		this.memoryModes.set(chatId, normalizedMode);
 		this.app.saveChatModeState(
-			{ chatId, mode: "general", itemId: null, sessionId: mode.sessionId, history: mode.history },
+			{ chatId, mode: "general", itemId: null, sessionId: mode.sessionId, history: clampedHistory },
 			new Date().toISOString(),
 		);
 	}
