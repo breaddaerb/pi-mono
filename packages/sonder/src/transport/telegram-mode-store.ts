@@ -30,10 +30,17 @@ export class TelegramChatModeStore {
 			return undefined;
 		}
 
-		const restored: ChatModeState =
-			stored.mode === "item"
-				? { mode: "item", itemId: stored.itemId, sessionId: stored.sessionId }
-				: { mode: "general", sessionId: stored.sessionId, history: stored.history };
+		if (stored.mode === "item") {
+			if (!this.app.hasItem(stored.itemId) || !this.app.isSessionForItem(stored.itemId, stored.sessionId)) {
+				this.app.clearChatModeState(chatId);
+				return undefined;
+			}
+			const restored: ChatModeState = { mode: "item", itemId: stored.itemId, sessionId: stored.sessionId };
+			this.memoryModes.set(chatId, restored);
+			return restored;
+		}
+
+		const restored: ChatModeState = { mode: "general", sessionId: stored.sessionId, history: stored.history };
 		this.memoryModes.set(chatId, restored);
 		return restored;
 	}

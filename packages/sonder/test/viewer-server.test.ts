@@ -124,6 +124,47 @@ describe("viewer server", () => {
 		}
 	});
 
+	it("maps viewer request errors to 400/404 classes", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-viewer-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		const viewer = await startViewerServer({ app });
+		try {
+			const missingItemResponse = await fetch(`${viewer.baseUrl}/viewer/api/items/missing-item/annotations`);
+			expect(missingItemResponse.status).toBe(404);
+			expect(await missingItemResponse.text()).toContain('"code": "NOT_FOUND"');
+
+			const invalidJsonResponse = await fetch(`${viewer.baseUrl}/viewer/api/items/missing-item/annotations`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: "{",
+			});
+			expect(invalidJsonResponse.status).toBe(400);
+			expect(await invalidJsonResponse.text()).toContain('"code": "BAD_REQUEST"');
+
+			const missingAnnotationPatch = await fetch(`${viewer.baseUrl}/viewer/api/annotations/missing-ann`, {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ text: "x" }),
+			});
+			expect(missingAnnotationPatch.status).toBe(404);
+			expect(await missingAnnotationPatch.text()).toContain('"code": "NOT_FOUND"');
+		} finally {
+			await viewer.close();
+			app.close();
+		}
+	});
+
 	it("serves viewer page and supports annotation create/delete APIs", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-viewer-"));
 		tempDirs.push(root);

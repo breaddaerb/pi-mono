@@ -34,6 +34,42 @@ interface UpdateViewerAnnotationPayload {
 	anchor?: string;
 }
 
+class ViewerHttpError extends Error {
+	constructor(
+		readonly status: number,
+		readonly code: string,
+		message: string,
+	) {
+		super(message);
+	}
+}
+
+function badRequest(message: string): ViewerHttpError {
+	return new ViewerHttpError(400, "BAD_REQUEST", message);
+}
+
+function notFound(message: string): ViewerHttpError {
+	return new ViewerHttpError(404, "NOT_FOUND", message);
+}
+
+function mapViewerRequestError(error: unknown): ViewerHttpError | null {
+	if (error instanceof ViewerHttpError) {
+		return error;
+	}
+	if (error instanceof SyntaxError) {
+		return badRequest("Invalid JSON payload.");
+	}
+	if (error instanceof Error) {
+		if (error.message.startsWith("Item not found:")) {
+			return notFound(error.message);
+		}
+		if (error.message.startsWith("Annotation not found:")) {
+			return notFound(error.message);
+		}
+	}
+	return null;
+}
+
 function respondJson(response: ServerResponse, status: number, payload: unknown): void {
 	response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
 	response.end(JSON.stringify(payload, null, 2));
@@ -1047,11 +1083,11 @@ function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
 function parseCreatePayload(body: string): CreateViewerAnnotationPayload {
 	const parsed = JSON.parse(body) as Partial<CreateViewerAnnotationPayload>;
 	if (!parsed || typeof parsed !== "object") {
-		throw new Error("Invalid payload");
+		throw badRequest("Invalid payload.");
 	}
 	const type = parsed.type;
 	if (type !== "highlight" && type !== "underline" && type !== "note") {
-		throw new Error("Invalid annotation type");
+		throw badRequest("Invalid annotation type.");
 	}
 	const tags = Array.isArray(parsed.tags)
 		? parsed.tags.filter((tag): tag is string => typeof tag === "string" && tag.length > 0)
@@ -1069,7 +1105,7 @@ function parseCreatePayload(body: string): CreateViewerAnnotationPayload {
 function parseUpdatePayload(body: string): UpdateViewerAnnotationPayload {
 	const parsed = JSON.parse(body) as Partial<UpdateViewerAnnotationPayload>;
 	if (!parsed || typeof parsed !== "object") {
-		throw new Error("Invalid payload");
+		throw badRequest("Invalid payload.");
 	}
 	const payload: UpdateViewerAnnotationPayload = {};
 	if ("text" in parsed) {
@@ -1223,6 +1259,11 @@ export async function startViewerServer(options: SonderViewerServerOptions): Pro
 	const port = options.port ?? 0;
 	const server = createServer((request, response) => {
 		void handleRequest(options.app, request, response).catch((error: unknown) => {
+			const mapped = mapViewerRequestError(error);
+			if (mapped) {
+				respondJson(response, mapped.status, { code: mapped.code, message: mapped.message });
+				return;
+			}
 			const message = error instanceof Error ? error.message : String(error);
 			respondJson(response, 500, { code: "INTERNAL_ERROR", message, traceId: randomUUID() });
 		});

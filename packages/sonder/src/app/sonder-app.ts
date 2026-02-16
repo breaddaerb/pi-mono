@@ -238,6 +238,15 @@ export class SonderApp {
 		return this.chatModeStateRepo.deleteByChatId(chatId);
 	}
 
+	hasItem(itemId: string): boolean {
+		return this.itemsRepo.findById(itemId) !== null;
+	}
+
+	isSessionForItem(itemId: string, sessionId: string): boolean {
+		const session = this.dialogueRepo.findSessionById(sessionId);
+		return Boolean(session && session.itemId === itemId);
+	}
+
 	createAnnotation(input: {
 		itemId: string;
 		type: Annotation["type"];
@@ -509,94 +518,90 @@ export class SonderApp {
 			topic: null,
 			space: null,
 		};
-		this.itemsRepo.create(item);
-
-		const sourceCapture = await captureFromSource({
-			itemId,
-			url,
-			dataRootDir: this.dataRootDir,
-			fetchImpl: this.options.snapshotFetchImpl,
-		});
-		const snapshot = sourceCapture.snapshot;
-
-		const normalizedPastedText = this.normalizePastedText(pastedText);
-		const autoDerivedEvidenceText = this.deriveAutoEvidenceText({
-			platform: sourceCapture.platform,
-			usable: sourceCapture.usable,
-			extractedTextPath: snapshot.extractedTextPath,
-		});
-		const effectiveEvidenceText = normalizedPastedText ?? autoDerivedEvidenceText;
-		const usePastedEvidence =
-			Boolean(effectiveEvidenceText) &&
-			(!sourceCapture.usable || this.shouldPreferPastedEvidenceForPlatform(sourceCapture.platform));
-		let extractedTextPath = snapshot.extractedTextPath;
-		let evidenceMdPath: string | null = null;
-		if (usePastedEvidence && effectiveEvidenceText) {
-			evidenceMdPath = join(snapshot.itemDirectory, "evidence.md");
-			extractedTextPath = join(snapshot.itemDirectory, "evidence-extracted.txt");
-			writeFileSync(evidenceMdPath, effectiveEvidenceText, "utf8");
-			writeFileSync(extractedTextPath, effectiveEvidenceText, "utf8");
-		}
-
-		const artifactIds: string[] = [];
-		const snapshotAssetsArtifact = this.createArtifact(
-			itemId,
-			"snapshot-assets",
-			snapshot.snapshotAssetsDirectory,
-			"application/json",
-		);
-		this.artifactsRepo.create(snapshotAssetsArtifact);
-		artifactIds.push(snapshotAssetsArtifact.id);
-
-		const extractedTextArtifact = this.createArtifact(itemId, "extracted-text", extractedTextPath, "text/plain");
-		this.artifactsRepo.create(extractedTextArtifact);
-		artifactIds.push(extractedTextArtifact.id);
-
-		if (snapshot.snapshotHtmlPath && !usePastedEvidence) {
-			const htmlArtifact = this.createArtifact(itemId, "snapshot-html", snapshot.snapshotHtmlPath, "text/html");
-			this.artifactsRepo.create(htmlArtifact);
-			artifactIds.push(htmlArtifact.id);
-		}
-
-		if (evidenceMdPath) {
-			const evidenceArtifact = this.createArtifact(itemId, "evidence-md", evidenceMdPath, "text/markdown");
-			this.artifactsRepo.create(evidenceArtifact);
-			artifactIds.push(evidenceArtifact.id);
-		}
-
-		if (snapshot.screenshotFallbackPath && !usePastedEvidence) {
-			const fallbackArtifact = this.createArtifact(
+		const itemDirectory = join(this.dataRootDir, "items", itemId);
+		try {
+			const sourceCapture = await captureFromSource({
 				itemId,
-				"screenshot-fallback",
-				snapshot.screenshotFallbackPath,
-				"text/plain",
+				url,
+				dataRootDir: this.dataRootDir,
+				fetchImpl: this.options.snapshotFetchImpl,
+			});
+			const snapshot = sourceCapture.snapshot;
+
+			const normalizedPastedText = this.normalizePastedText(pastedText);
+			const autoDerivedEvidenceText = this.deriveAutoEvidenceText({
+				platform: sourceCapture.platform,
+				usable: sourceCapture.usable,
+				extractedTextPath: snapshot.extractedTextPath,
+			});
+			const effectiveEvidenceText = normalizedPastedText ?? autoDerivedEvidenceText;
+			const usePastedEvidence =
+				Boolean(effectiveEvidenceText) &&
+				(!sourceCapture.usable || this.shouldPreferPastedEvidenceForPlatform(sourceCapture.platform));
+			let extractedTextPath = snapshot.extractedTextPath;
+			let evidenceMdPath: string | null = null;
+			if (usePastedEvidence && effectiveEvidenceText) {
+				evidenceMdPath = join(snapshot.itemDirectory, "evidence.md");
+				extractedTextPath = join(snapshot.itemDirectory, "evidence-extracted.txt");
+				writeFileSync(evidenceMdPath, effectiveEvidenceText, "utf8");
+				writeFileSync(extractedTextPath, effectiveEvidenceText, "utf8");
+			}
+
+			const artifactsToPersist: Artifact[] = [];
+			artifactsToPersist.push(
+				this.createArtifact(itemId, "snapshot-assets", snapshot.snapshotAssetsDirectory, "application/json"),
 			);
-			this.artifactsRepo.create(fallbackArtifact);
-			artifactIds.push(fallbackArtifact.id);
+			artifactsToPersist.push(this.createArtifact(itemId, "extracted-text", extractedTextPath, "text/plain"));
+
+			if (snapshot.snapshotHtmlPath && !usePastedEvidence) {
+				artifactsToPersist.push(
+					this.createArtifact(itemId, "snapshot-html", snapshot.snapshotHtmlPath, "text/html"),
+				);
+			}
+
+			if (evidenceMdPath) {
+				artifactsToPersist.push(this.createArtifact(itemId, "evidence-md", evidenceMdPath, "text/markdown"));
+			}
+
+			if (snapshot.screenshotFallbackPath && !usePastedEvidence) {
+				artifactsToPersist.push(
+					this.createArtifact(itemId, "screenshot-fallback", snapshot.screenshotFallbackPath, "text/plain"),
+				);
+			}
+
+			this.withTransaction(() => {
+				this.itemsRepo.create(item);
+				for (const artifact of artifactsToPersist) {
+					this.artifactsRepo.create(artifact);
+				}
+			});
+
+			const sourcePlatform = sourceCapture.platform;
+			const sourceStatus = sourceCapture.status;
+			const sourceStatusReason = sourceCapture.reason;
+			const evidenceType: SonderEvidenceType = usePastedEvidence
+				? "pasted_text"
+				: sourceCapture.usable
+					? "snapshot"
+					: "fallback_text";
+
+			return {
+				type: "save",
+				itemId,
+				usedFallback: snapshot.usedFallback,
+				artifactIds: artifactsToPersist.map((artifact) => artifact.id),
+				url,
+				tags,
+				sourcePlatform,
+				sourceStatus,
+				sourceStatusReason,
+				evidenceType,
+				needsUserEvidence: !sourceCapture.usable && !usePastedEvidence,
+			};
+		} catch (error) {
+			rmSync(itemDirectory, { recursive: true, force: true });
+			throw error;
 		}
-
-		const sourcePlatform = sourceCapture.platform;
-		const sourceStatus = sourceCapture.status;
-		const sourceStatusReason = sourceCapture.reason;
-		const evidenceType: SonderEvidenceType = usePastedEvidence
-			? "pasted_text"
-			: sourceCapture.usable
-				? "snapshot"
-				: "fallback_text";
-
-		return {
-			type: "save",
-			itemId,
-			usedFallback: snapshot.usedFallback,
-			artifactIds,
-			url,
-			tags,
-			sourcePlatform,
-			sourceStatus,
-			sourceStatusReason,
-			evidenceType,
-			needsUserEvidence: !sourceCapture.usable && !usePastedEvidence,
-		};
 	}
 
 	private findItems(query: string, limit: number): SonderFindItem[] {
@@ -855,6 +860,18 @@ export class SonderApp {
 			anchor: annotation.anchor,
 			createdAt: annotation.createdAt,
 		};
+	}
+
+	private withTransaction<T>(action: () => T): T {
+		this.database.exec("BEGIN IMMEDIATE TRANSACTION;");
+		try {
+			const result = action();
+			this.database.exec("COMMIT;");
+			return result;
+		} catch (error) {
+			this.database.exec("ROLLBACK;");
+			throw error;
+		}
 	}
 
 	private createArtifact(itemId: string, kind: Artifact["kind"], path: string, mimeType: string): Artifact {

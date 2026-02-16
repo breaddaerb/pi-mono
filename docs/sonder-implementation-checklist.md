@@ -13,10 +13,12 @@ These should remain true unless intentionally redesigned.
 - Item-anchored dialogue as primary interaction model
 - `/open` supports both item mode (`/open <itemId>`) and general mode (`/open`)
 - Snapshot artifacts are durable local evidence (`snapshot.html + assets`, extracted text, fallback artifact)
+- Save pipeline persists item/artifact metadata transactionally and cleans partial artifacts on failure
 - Annotations are DB entities (do not mutate snapshot artifacts)
 - Context order for ask/runtime: annotations -> dialogue history -> extracted text
 - Dialogue turn lifecycle is explicit (`pending` -> `completed` or `failed`) and failures are persisted
 - Active per-chat mode/session is persisted and restored across restarts
+- Restored item-mode state is validated (item+session) and invalid state is auto-cleared
 - Telegram transport consumes app-level APIs (does not reach into app DB/repo internals)
 - Telegram transport helpers are modularized (callback parsing, renderers, mode store, input parsing)
 - Command parsing is centralized in `src/commands` (core + mode commands)
@@ -46,6 +48,7 @@ These should remain true unless intentionally redesigned.
 - [x] Anchor status surfaced (`anchor` / `fallback` / `unresolved`)
 - [x] Manual anchor repair action available
 - [x] Viewer-side filtering by type/status/tag available
+- [x] Viewer API maps validation/domain errors to 400/404 (not generic 500)
 - [ ] Add deeper automated tests for anchor repair and edge HTML drift scenarios
 
 ### 3.2 Retrieval quality (non-embedding)

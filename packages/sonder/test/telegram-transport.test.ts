@@ -546,6 +546,50 @@ describe("TelegramBotRunner", () => {
 		app.close();
 	});
 
+	it("auto-heals invalid persisted item mode state on restore", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "stub",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		app.itemsRepo.create({
+			id: "item_invalid_mode",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.saveChatModeState(
+			{
+				chatId: 66,
+				mode: "item",
+				itemId: "item_invalid_mode",
+				sessionId: "missing-session",
+				history: [],
+			},
+			new Date().toISOString(),
+		);
+
+		const api = new FakeTelegramApi([{ updateId: 1, type: "message", chatId: 66, text: "hello" }]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[0].text).toContain("No active dialogue");
+		expect(app.loadChatModeState(66)).toBeNull();
+		app.close();
+	});
+
 	it("shows history for active and explicit sessions", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);

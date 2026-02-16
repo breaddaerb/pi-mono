@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -95,6 +95,48 @@ describe("SonderApp", () => {
 		} finally {
 			app.close();
 			await server.close();
+		}
+	});
+
+	it("rolls back item persistence and cleans artifacts on save failure", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+			snapshotFetchImpl: async () =>
+				new Response("<html><body><h1>Save failure test</h1></body></html>", {
+					status: 200,
+					headers: { "content-type": "text/html; charset=utf-8" },
+				}),
+		});
+
+		const originalCreate = app.artifactsRepo.create.bind(app.artifactsRepo);
+		let createCalls = 0;
+		app.artifactsRepo.create = ((artifact) => {
+			createCalls++;
+			if (createCalls === 2) {
+				throw new Error("simulated artifact insert failure");
+			}
+			originalCreate(artifact);
+		}) as typeof app.artifactsRepo.create;
+
+		try {
+			await expect(app.saveFromInput({ url: "https://example.com/save-failure" })).rejects.toThrow(
+				"simulated artifact insert failure",
+			);
+			expect(app.itemsRepo.listRecent(10)).toHaveLength(0);
+			const itemsDirectory = join(root, "data", "items");
+			if (existsSync(itemsDirectory)) {
+				expect(readdirSync(itemsDirectory)).toHaveLength(0);
+			}
+		} finally {
+			app.close();
 		}
 	});
 
