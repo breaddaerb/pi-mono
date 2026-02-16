@@ -9,10 +9,12 @@ import { cleanExtractedTextForPlatform, detectSourcePlatform } from "../sources/
 import {
 	AnnotationsRepo,
 	ArtifactsRepo,
+	ChatModeStateRepo,
 	type CreateDatabaseOptions,
 	createDatabase,
 	DialogueRepo,
 	ItemsRepo,
+	type StoredChatModeState,
 } from "../storage/index.js";
 import type { Annotation, Artifact, DialogueTurnStatus, Item, ItemSourceType } from "../types.js";
 
@@ -87,6 +89,8 @@ export interface SonderAnnotationItem {
 
 export interface SonderFindItem {
 	id: string;
+	createdAt: string;
+	sourceType: ItemSourceType;
 	originalUrl: string;
 	tags: string[];
 	score: number;
@@ -159,6 +163,7 @@ export class SonderApp {
 	readonly askService: AskService;
 	readonly dataRootDir: string;
 	private readonly responder: AskResponder;
+	private readonly chatModeStateRepo: ChatModeStateRepo;
 
 	constructor(private readonly options: SonderAppOptions) {
 		const databasePath = options.paths.databasePath ?? join(options.paths.rootDir, "sonder.sqlite");
@@ -171,6 +176,7 @@ export class SonderApp {
 		this.artifactsRepo = new ArtifactsRepo(this.database);
 		this.annotationsRepo = new AnnotationsRepo(this.database);
 		this.dialogueRepo = new DialogueRepo(this.database);
+		this.chatModeStateRepo = new ChatModeStateRepo(this.database);
 		this.askService = new AskService(
 			{
 				itemsRepo: this.itemsRepo,
@@ -218,6 +224,18 @@ export class SonderApp {
 			errorMessage: turn.errorMessage,
 			createdAt: turn.createdAt,
 		}));
+	}
+
+	loadChatModeState(chatId: number): StoredChatModeState | null {
+		return this.chatModeStateRepo.findByChatId(chatId);
+	}
+
+	saveChatModeState(state: Omit<StoredChatModeState, "updatedAt">, updatedAt: string): void {
+		this.chatModeStateRepo.upsert(state, updatedAt);
+	}
+
+	clearChatModeState(chatId: number): boolean {
+		return this.chatModeStateRepo.deleteByChatId(chatId);
 	}
 
 	createAnnotation(input: {
@@ -668,6 +686,8 @@ export class SonderApp {
 			}
 			scored.push({
 				id: item.id,
+				createdAt: item.createdAt,
+				sourceType: item.sourceType,
 				originalUrl: item.originalUrl,
 				tags: item.tags,
 				score,

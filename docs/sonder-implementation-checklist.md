@@ -17,6 +17,7 @@ These should remain true unless intentionally redesigned.
 - Context order for ask/runtime: annotations -> dialogue history -> extracted text
 - Dialogue turn lifecycle is explicit (`pending` -> `completed` or `failed`) and failures are persisted
 - Active per-chat mode/session is persisted and restored across restarts
+- Telegram transport consumes app-level APIs (does not reach into app DB/repo internals)
 - `/ask` remains compatibility fallback; Telegram primary UX is open-first contextual asking
 - Retrieval remains lean non-embedding for current phase
 

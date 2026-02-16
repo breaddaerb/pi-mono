@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import type { Writable } from "node:stream";
 import { type Dispatcher, ProxyAgent, fetch as undiciFetch } from "undici";
 import type { SonderApp } from "../app/index.js";
-import { ChatModeStateRepo } from "../storage/index.js";
 
 interface TelegramGetUpdatesResponse {
 	ok: boolean;
@@ -574,7 +573,6 @@ export class TelegramBotRunner {
 	private readonly getViewerItemUrl?: (itemId: string) => string;
 	private readonly modelSelector: TelegramRuntimeModelSelector | null;
 	private readonly chatModes = new Map<number, ChatModeState>();
-	private readonly chatModeStateRepo: ChatModeStateRepo;
 	private readonly itemMenus = new Map<number, Map<string, ItemMenuState>>();
 	private readonly sessionMenus = new Map<number, Map<string, SessionMenuState>>();
 	private readonly modelMenus = new Map<number, Map<string, ModelMenuState>>();
@@ -590,7 +588,6 @@ export class TelegramBotRunner {
 		this.stderr = options.stderr ?? process.stderr;
 		this.getViewerItemUrl = options.getViewerItemUrl;
 		this.modelSelector = options.modelSelector ?? null;
-		this.chatModeStateRepo = new ChatModeStateRepo(this.app.database);
 	}
 
 	async pollOnce(): Promise<void> {
@@ -622,7 +619,7 @@ export class TelegramBotRunner {
 			return memoryMode;
 		}
 
-		const stored = this.chatModeStateRepo.findByChatId(chatId);
+		const stored = this.app.loadChatModeState(chatId);
 		if (!stored) {
 			return undefined;
 		}
@@ -638,13 +635,13 @@ export class TelegramBotRunner {
 	private setChatMode(chatId: number, mode: ChatModeState): void {
 		this.chatModes.set(chatId, mode);
 		if (mode.mode === "item") {
-			this.chatModeStateRepo.upsert(
+			this.app.saveChatModeState(
 				{ chatId, mode: "item", itemId: mode.itemId, sessionId: mode.sessionId, history: [] },
 				new Date().toISOString(),
 			);
 			return;
 		}
-		this.chatModeStateRepo.upsert(
+		this.app.saveChatModeState(
 			{ chatId, mode: "general", itemId: null, sessionId: mode.sessionId, history: mode.history },
 			new Date().toISOString(),
 		);
@@ -652,7 +649,7 @@ export class TelegramBotRunner {
 
 	private clearChatMode(chatId: number): boolean {
 		const existed = this.chatModes.delete(chatId);
-		const existedInDb = this.chatModeStateRepo.deleteByChatId(chatId);
+		const existedInDb = this.app.clearChatModeState(chatId);
 		return existed || existedInDb;
 	}
 
@@ -1644,29 +1641,26 @@ export class TelegramBotRunner {
 				result.value.items.length > 0
 			) {
 				const menuKind: MenuKind = result.value.type;
-				const entries: ItemMenuEntry[] = result.value.items.flatMap((item) => {
-					const details = this.app.itemsRepo.findById(item.id);
-					if (!details) {
-						return [];
-					}
-					const reasons = menuKind === "find" && "reasons" in item ? item.reasons : [];
-					const snippets = menuKind === "find" && "snippets" in item ? item.snippets : [];
-					return [
-						{
-							id: item.id,
-							createdAt: details.createdAt,
-							sourceType: String(details.sourceType),
-							originalUrl: details.originalUrl,
-							tags: details.tags,
-							reasons,
-							snippets,
-						},
-					];
-				});
-				if (entries.length === 0) {
-					await this.api.sendMessage(chatId, "No items available for display.");
-					return;
-				}
+				const entries: ItemMenuEntry[] =
+					result.value.type === "find"
+						? result.value.items.map((item) => ({
+								id: item.id,
+								createdAt: item.createdAt,
+								sourceType: String(item.sourceType),
+								originalUrl: item.originalUrl,
+								tags: item.tags,
+								reasons: item.reasons,
+								snippets: item.snippets,
+							}))
+						: result.value.items.map((item) => ({
+								id: item.id,
+								createdAt: item.createdAt,
+								sourceType: String(item.sourceType),
+								originalUrl: item.originalUrl,
+								tags: item.tags,
+								reasons: [],
+								snippets: [],
+							}));
 				const query = result.value.type === "find" ? result.value.query : null;
 				const menuId = this.createItemMenu(chatId, menuKind, entries, query);
 				const menu = this.getItemMenu(chatId, menuId);
