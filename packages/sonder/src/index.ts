@@ -17,6 +17,7 @@ export {
 	type ParseTelegramCommandError,
 	parseTelegramCommand,
 } from "./commands/parse-command.js";
+export { type ParsedTelegramModeCommand, parseTelegramModeCommand } from "./commands/parse-mode-command.js";
 export {
 	type AskContext,
 	type AskContextInput,

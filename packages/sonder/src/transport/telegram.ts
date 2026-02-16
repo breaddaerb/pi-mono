@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { Writable } from "node:stream";
 import { type Dispatcher, ProxyAgent, fetch as undiciFetch } from "undici";
 import type { SonderApp } from "../app/index.js";
+import type { ParsedTelegramModeCommand } from "../commands/parse-mode-command.js";
+import { parseTelegramModeCommand } from "../commands/parse-mode-command.js";
 
 interface TelegramGetUpdatesResponse {
 	ok: boolean;
@@ -363,15 +365,6 @@ interface ChatModeStateGeneral {
 
 type ChatModeState = ChatModeStateItem | ChatModeStateGeneral;
 
-type ModeCommand =
-	| { type: "open"; itemId?: string }
-	| { type: "exit" }
-	| { type: "where" }
-	| { type: "models" }
-	| { type: "sessions"; itemId?: string }
-	| { type: "resume"; sessionId: string }
-	| { type: "history"; sessionId?: string };
-
 function extractUrlAndPastedText(text: string): { url: string; pastedText: string | null } | null {
 	const urlMatch = text.match(/https?:\/\/\S+/i);
 	if (!urlMatch) {
@@ -395,35 +388,6 @@ function extractUrlAndPastedText(text: string): { url: string; pastedText: strin
 		url: normalizedUrl,
 		pastedText: pastedRaw.length > 0 ? pastedRaw : null,
 	};
-}
-
-function parseModeCommand(text: string): ModeCommand | null {
-	const parts = text
-		.trim()
-		.split(/\s+/)
-		.filter((part) => part.length > 0);
-	if (parts[0] === "/open") {
-		return { type: "open", itemId: parts[1] };
-	}
-	if (parts[0] === "/exit") {
-		return { type: "exit" };
-	}
-	if (parts[0] === "/where") {
-		return { type: "where" };
-	}
-	if (parts[0] === "/models") {
-		return { type: "models" };
-	}
-	if (parts[0] === "/sessions") {
-		return { type: "sessions", itemId: parts[1] };
-	}
-	if (parts[0] === "/resume" && parts[1]) {
-		return { type: "resume", sessionId: parts[1] };
-	}
-	if (parts[0] === "/history") {
-		return { type: "history", sessionId: parts[1] };
-	}
-	return null;
 }
 
 function parseCallbackPayload(data: string): CallbackPayload | null {
@@ -1539,7 +1503,7 @@ export class TelegramBotRunner {
 
 	private async handleMessage(chatId: number, text: string): Promise<void> {
 		try {
-			const modeCommand = parseModeCommand(text);
+			const modeCommand = parseTelegramModeCommand(text);
 			if (modeCommand) {
 				await this.handleModeCommand(chatId, modeCommand);
 				return;
@@ -1683,7 +1647,7 @@ export class TelegramBotRunner {
 		}
 	}
 
-	private async handleModeCommand(chatId: number, command: ModeCommand): Promise<void> {
+	private async handleModeCommand(chatId: number, command: ParsedTelegramModeCommand): Promise<void> {
 		if (command.type === "open") {
 			if (!command.itemId) {
 				const sessionId = randomUUID();
