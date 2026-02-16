@@ -164,6 +164,11 @@ In item mode, action panel supports: `Open Viewer | Delete Item | Exit`.
 
 Viewer note: snapshot rendering disables active scripts/iframes/refresh directives at view time to keep pages stable for reading and annotation.
 
+## Additional technical docs
+
+- Maintainer walkthrough: `packages/sonder/project.md`
+- Runtime/persistence data flow: `packages/sonder/data-flow.md`
+
 ## Discovery UX details
 
 - `/find` and `/list` are rendered as index-based rows with inline `Open` buttons

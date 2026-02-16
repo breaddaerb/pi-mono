@@ -115,6 +115,7 @@ No blocking correctness issues found for current MVP behavior.
 - user/developer usage: `packages/sonder/README.md`
 - delivery tracker: `packages/sonder/TODO.md`
 - implementation checklist: `docs/sonder-implementation-checklist.md`
+- data flow reference: `packages/sonder/data-flow.md`
 - this ramp-up brief: `packages/sonder/project.md`
 
 Keep these aligned whenever behavior changes.
