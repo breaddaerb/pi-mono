@@ -18,6 +18,7 @@ These should remain true unless intentionally redesigned.
 - Dialogue turn lifecycle is explicit (`pending` -> `completed` or `failed`) and failures are persisted
 - Active per-chat mode/session is persisted and restored across restarts
 - Telegram transport consumes app-level APIs (does not reach into app DB/repo internals)
+- Telegram transport helpers are modularized (callback parsing, renderers, mode store, input parsing)
 - Command parsing is centralized in `src/commands` (core + mode commands)
 - Command dispatch uses exact command tokens (no prefix-style matching like `/saveX`)
 - `/ask` remains compatibility fallback; Telegram primary UX is open-first contextual asking

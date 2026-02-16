@@ -4,6 +4,10 @@ import { type Dispatcher, ProxyAgent, fetch as undiciFetch } from "undici";
 import type { SonderApp } from "../app/index.js";
 import type { ParsedTelegramModeCommand } from "../commands/parse-mode-command.js";
 import { parseTelegramModeCommand } from "../commands/parse-mode-command.js";
+import { buildCallbackPayload, type CallbackAction, parseCallbackPayload } from "./telegram-callback.js";
+import { extractUrlAndPastedText } from "./telegram-input.js";
+import { type ChatModeState, TelegramChatModeStore } from "./telegram-mode-store.js";
+import { formatCommandResult, formatPollingError, splitForTelegram, truncateMiddle } from "./telegram-renderers.js";
 
 interface TelegramGetUpdatesResponse {
 	ok: boolean;
@@ -212,55 +216,6 @@ export class TelegramHttpApi implements TelegramApi {
 	}
 }
 
-function formatPollingError(error: unknown): string {
-	if (!(error instanceof Error)) {
-		return String(error);
-	}
-	const cause = error.cause;
-	if (cause && typeof cause === "object") {
-		const code = "code" in cause ? String(cause.code) : undefined;
-		const message = "message" in cause ? String(cause.message) : undefined;
-		if (code || message) {
-			return `${error.message}${code || message ? ` (cause: ${[code, message].filter(Boolean).join(" - ")})` : ""}`;
-		}
-	}
-	return error.message;
-}
-
-const MAX_TELEGRAM_MESSAGE_LENGTH = 3500;
-
-function truncateMiddle(text: string, maxLength: number): string {
-	if (text.length <= maxLength) {
-		return text;
-	}
-	const left = Math.floor((maxLength - 3) / 2);
-	const right = maxLength - 3 - left;
-	return `${text.slice(0, left)}...${text.slice(text.length - right)}`;
-}
-
-function splitForTelegram(text: string): string[] {
-	if (text.length <= MAX_TELEGRAM_MESSAGE_LENGTH) {
-		return [text];
-	}
-	const chunks: string[] = [];
-	let remaining = text;
-	while (remaining.length > MAX_TELEGRAM_MESSAGE_LENGTH) {
-		const candidate = remaining.slice(0, MAX_TELEGRAM_MESSAGE_LENGTH);
-		const splitIndex = candidate.lastIndexOf("\n");
-		if (splitIndex > 0) {
-			chunks.push(remaining.slice(0, splitIndex));
-			remaining = remaining.slice(splitIndex + 1);
-			continue;
-		}
-		chunks.push(candidate);
-		remaining = remaining.slice(MAX_TELEGRAM_MESSAGE_LENGTH);
-	}
-	if (remaining.length > 0) {
-		chunks.push(remaining);
-	}
-	return chunks;
-}
-
 const FIND_MENU_TTL_MS = 15 * 60 * 1000;
 
 type MenuKind = "find" | "list";
@@ -315,220 +270,6 @@ interface HistoryMenuState {
 	expiresAtMs: number;
 }
 
-type CallbackAction =
-	| "find_open"
-	| "find_del"
-	| "list_open"
-	| "list_del"
-	| "model_set"
-	| "menu_time"
-	| "menu_time_set"
-	| "menu_source"
-	| "menu_source_set"
-	| "menu_tag"
-	| "menu_tag_set"
-	| "menu_tag_page"
-	| "menu_sort"
-	| "menu_sort_set"
-	| "menu_back"
-	| "menu_clear"
-	| "menu_prev"
-	| "menu_next"
-	| "sess_resume"
-	| "sess_new"
-	| "hist_prev"
-	| "hist_next"
-	| "hist_back"
-	| "hist_full"
-	| "ctx_exit"
-	| "ctx_viewer"
-	| "ctx_del";
-
-interface CallbackPayload {
-	version: "v1";
-	action: CallbackAction;
-	menuId: string;
-	argument: string;
-}
-
-interface ChatModeStateItem {
-	mode: "item";
-	itemId: string;
-	sessionId: string;
-}
-
-interface ChatModeStateGeneral {
-	mode: "general";
-	sessionId: string;
-	history: Array<{ role: "user" | "assistant"; content: string }>;
-}
-
-type ChatModeState = ChatModeStateItem | ChatModeStateGeneral;
-
-function extractUrlAndPastedText(text: string): { url: string; pastedText: string | null } | null {
-	const urlMatch = text.match(/https?:\/\/\S+/i);
-	if (!urlMatch) {
-		return null;
-	}
-	const rawUrl = urlMatch[0];
-	let normalizedUrl: string;
-	try {
-		const parsed = new URL(rawUrl);
-		normalizedUrl = parsed.toString();
-	} catch {
-		return null;
-	}
-	const before = text.slice(0, urlMatch.index ?? 0).trim();
-	const after = text.slice((urlMatch.index ?? 0) + rawUrl.length).trim();
-	const pastedRaw = [before, after]
-		.filter((part) => part.length > 0)
-		.join("\n")
-		.trim();
-	return {
-		url: normalizedUrl,
-		pastedText: pastedRaw.length > 0 ? pastedRaw : null,
-	};
-}
-
-function parseCallbackPayload(data: string): CallbackPayload | null {
-	const parts = data.split(":");
-	if (parts.length !== 5) {
-		return null;
-	}
-	if (parts[0] !== "sx" || parts[1] !== "v1") {
-		return null;
-	}
-	const action = parts[2];
-	if (
-		action !== "find_open" &&
-		action !== "find_del" &&
-		action !== "list_open" &&
-		action !== "list_del" &&
-		action !== "model_set" &&
-		action !== "menu_time" &&
-		action !== "menu_time_set" &&
-		action !== "menu_source" &&
-		action !== "menu_source_set" &&
-		action !== "menu_tag" &&
-		action !== "menu_tag_set" &&
-		action !== "menu_tag_page" &&
-		action !== "menu_sort" &&
-		action !== "menu_sort_set" &&
-		action !== "menu_back" &&
-		action !== "menu_clear" &&
-		action !== "menu_prev" &&
-		action !== "menu_next" &&
-		action !== "sess_resume" &&
-		action !== "sess_new" &&
-		action !== "hist_prev" &&
-		action !== "hist_next" &&
-		action !== "hist_back" &&
-		action !== "hist_full" &&
-		action !== "ctx_exit" &&
-		action !== "ctx_viewer" &&
-		action !== "ctx_del"
-	) {
-		return null;
-	}
-	return {
-		version: "v1",
-		action,
-		menuId: parts[3],
-		argument: parts[4],
-	};
-}
-
-function buildCallbackPayload(action: CallbackAction, menuId: string, argument: number): string {
-	return `sx:v1:${action}:${menuId}:${argument}`;
-}
-
-function formatCommandResult(result: Awaited<ReturnType<SonderApp["processCommand"]>>): string {
-	if (!result.ok) {
-		return `Error (${result.error.code}): ${result.error.message}`;
-	}
-
-	if (result.value.type === "save") {
-		const mode =
-			result.value.evidenceType === "snapshot"
-				? "snapshot mode"
-				: result.value.evidenceType === "pasted_text"
-					? "pasted-text evidence mode"
-					: "fallback text mode";
-		const tags = result.value.tags.length > 0 ? `\nTags: ${result.value.tags.map((tag) => `#${tag}`).join(" ")}` : "";
-		const source = `\nSource: ${result.value.sourcePlatform} · ${result.value.sourceStatus}`;
-		const reason = result.value.sourceStatusReason
-			? `\nReason: ${truncateMiddle(result.value.sourceStatusReason, 180)}`
-			: "";
-		const needsEvidence = result.value.needsUserEvidence
-			? "\nLink usability: not usable for reliable evidence. Re-send with pasted text: /save <url> <pasted text>"
-			: "";
-		return (
-			[
-				"Saved item",
-				`ID: ${result.value.itemId}`,
-				`URL: ${result.value.url}`,
-				`Capture: ${mode}`,
-				`Artifacts: ${result.value.artifactIds.length}`,
-			].join("\n") +
-			source +
-			reason +
-			tags +
-			needsEvidence
-		);
-	}
-
-	if (result.value.type === "list") {
-		if (result.value.items.length === 0) {
-			return "No saved items yet. Use /save <url> first.";
-		}
-		const lines = result.value.items.map((item, index) => {
-			const tags = item.tags.length > 0 ? ` ${item.tags.map((tag) => `#${tag}`).join(" ")}` : "";
-			const url = truncateMiddle(item.originalUrl, 100);
-			return `${index + 1}. ${url}${tags}`;
-		});
-		return `🗂 Recent items (${result.value.items.length})\n\n${lines.join("\n\n")}`;
-	}
-
-	if (result.value.type === "find") {
-		if (result.value.items.length === 0) {
-			return `No items matched: ${result.value.query}`;
-		}
-		const lines = result.value.items.map((item, index) => {
-			const tags = item.tags.length > 0 ? ` ${item.tags.map((tag) => `#${tag}`).join(" ")}` : "";
-			const snippetLine = item.snippets.length > 0 ? `\n   match: ${truncateMiddle(item.snippets[0], 120)}` : "";
-			return `${index + 1}. ${truncateMiddle(item.originalUrl, 100)}${tags}\n   reasons: ${item.reasons.join(", ")}${snippetLine}`;
-		});
-		return `🔎 Found ${result.value.items.length} results for: ${result.value.query}\n\n${lines.join("\n\n")}`;
-	}
-
-	if (result.value.type === "annotate") {
-		const tags =
-			result.value.annotation.tags.length > 0
-				? `\nTags: ${result.value.annotation.tags.map((tag) => `#${tag}`).join(" ")}`
-				: "";
-		return `Annotation saved\nID: ${result.value.annotation.id}\nItem: ${result.value.annotation.itemId}\nText: ${result.value.annotation.text ?? ""}${tags}`;
-	}
-
-	if (result.value.type === "ann-list") {
-		if (result.value.annotations.length === 0) {
-			return `No annotations for item ${result.value.itemId}.`;
-		}
-		const lines = result.value.annotations.map((annotation, index) => {
-			const tags = annotation.tags.length > 0 ? ` ${annotation.tags.map((tag) => `#${tag}`).join(" ")}` : "";
-			const preview = truncateMiddle(annotation.text ?? "(empty)", 120);
-			return `${index + 1}. ${annotation.id}\n   ${preview}${tags}`;
-		});
-		return `Annotations for ${result.value.itemId} (${result.value.annotations.length})\n\n${lines.join("\n\n")}`;
-	}
-
-	if (result.value.type === "ann-del") {
-		return `Annotation deleted\nID: ${result.value.annotationId}`;
-	}
-
-	const citations = result.value.citations.length > 0 ? `\n\nCitations: ${result.value.citations.join(" ")}` : "";
-	return `Answer for ${result.value.itemId}\n\n${result.value.answer}${citations}`;
-}
-
 export class TelegramBotRunner {
 	private offset = 0;
 	private readonly longPollSeconds: number;
@@ -536,7 +277,7 @@ export class TelegramBotRunner {
 	private readonly stderr: Writable;
 	private readonly getViewerItemUrl?: (itemId: string) => string;
 	private readonly modelSelector: TelegramRuntimeModelSelector | null;
-	private readonly chatModes = new Map<number, ChatModeState>();
+	private readonly chatModeStore: TelegramChatModeStore;
 	private readonly itemMenus = new Map<number, Map<string, ItemMenuState>>();
 	private readonly sessionMenus = new Map<number, Map<string, SessionMenuState>>();
 	private readonly modelMenus = new Map<number, Map<string, ModelMenuState>>();
@@ -552,6 +293,7 @@ export class TelegramBotRunner {
 		this.stderr = options.stderr ?? process.stderr;
 		this.getViewerItemUrl = options.getViewerItemUrl;
 		this.modelSelector = options.modelSelector ?? null;
+		this.chatModeStore = new TelegramChatModeStore(this.app);
 	}
 
 	async pollOnce(): Promise<void> {
@@ -578,43 +320,15 @@ export class TelegramBotRunner {
 	}
 
 	private getChatMode(chatId: number): ChatModeState | undefined {
-		const memoryMode = this.chatModes.get(chatId);
-		if (memoryMode) {
-			return memoryMode;
-		}
-
-		const stored = this.app.loadChatModeState(chatId);
-		if (!stored) {
-			return undefined;
-		}
-
-		const restored: ChatModeState =
-			stored.mode === "item"
-				? { mode: "item", itemId: stored.itemId, sessionId: stored.sessionId }
-				: { mode: "general", sessionId: stored.sessionId, history: stored.history };
-		this.chatModes.set(chatId, restored);
-		return restored;
+		return this.chatModeStore.get(chatId);
 	}
 
 	private setChatMode(chatId: number, mode: ChatModeState): void {
-		this.chatModes.set(chatId, mode);
-		if (mode.mode === "item") {
-			this.app.saveChatModeState(
-				{ chatId, mode: "item", itemId: mode.itemId, sessionId: mode.sessionId, history: [] },
-				new Date().toISOString(),
-			);
-			return;
-		}
-		this.app.saveChatModeState(
-			{ chatId, mode: "general", itemId: null, sessionId: mode.sessionId, history: mode.history },
-			new Date().toISOString(),
-		);
+		this.chatModeStore.set(chatId, mode);
 	}
 
 	private clearChatMode(chatId: number): boolean {
-		const existed = this.chatModes.delete(chatId);
-		const existedInDb = this.app.clearChatModeState(chatId);
-		return existed || existedInDb;
+		return this.chatModeStore.clear(chatId);
 	}
 
 	private createItemMenu(chatId: number, kind: MenuKind, entries: ItemMenuEntry[], query: string | null): string {
