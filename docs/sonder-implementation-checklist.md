@@ -24,6 +24,10 @@ These should remain true unless intentionally redesigned.
 - Restored item-mode state is validated (item+session) and invalid state is auto-cleared
 - Telegram transport consumes app-level APIs (does not reach into app DB/repo internals)
 - Telegram transport helpers are modularized (callback parsing, renderers, mode store, input parsing)
+- Telegram startup registers slash-command suggestions via Bot API `setMyCommands`
+- Viewer note editing is inline in annotation cards (no prompt-based modal flow)
+- Telegram/viewer display timestamps use `Asia/Shanghai` (`UTC+8`) while persistence remains UTC ISO
+- Codex default model selection prefers `gpt-5.2` when available
 - General chat history persistence is bounded (entry + character caps)
 - History pagination state transitions are clamped to valid page bounds
 - Command parsing is centralized in `src/commands` (core + mode commands)

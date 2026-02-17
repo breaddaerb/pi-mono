@@ -33,6 +33,7 @@ export {
 	createCodexResponder,
 	createStubResponder,
 	DEFAULT_MAX_EXTRACTED_TEXT_CHARACTERS,
+	DEFAULT_PREFERRED_CODEX_MODEL_ID,
 	renderAskPrompt,
 } from "./runtime/index.js";
 export {
@@ -68,7 +69,13 @@ export {
 	ItemsRepo,
 	type StoredChatModeState,
 } from "./storage/index.js";
-export { type TelegramApi, TelegramBotRunner, TelegramHttpApi, type TelegramRunnerOptions } from "./transport/index.js";
+export {
+	type TelegramApi,
+	type TelegramBotCommand,
+	TelegramBotRunner,
+	TelegramHttpApi,
+	type TelegramRunnerOptions,
+} from "./transport/index.js";
 export type {
 	Annotation,
 	AnnotationType,

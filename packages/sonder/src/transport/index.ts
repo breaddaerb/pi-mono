@@ -1,5 +1,6 @@
 export {
 	type TelegramApi,
+	type TelegramBotCommand,
 	TelegramBotRunner,
 	TelegramHttpApi,
 	type TelegramRunnerOptions,

@@ -115,6 +115,9 @@ SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890"
 /ann del <annotationId>
 ```
 
+Telegram startup behavior:
+- Sonder registers slash-command suggestions via Telegram `setMyCommands` (`/save`, `/find`, `/list`, `/open`, `/sessions`, `/history`, `/where`, `/models`, `/exit`).
+
 ## Interaction map (recommended)
 
 ### A) Save and continue immediately
@@ -169,6 +172,8 @@ Behavior:
 - `/models` shows available Codex models and current active model
 - use inline `N Use` buttons to switch model
 - selection applies to subsequent dialogue turns in current runtime
+- default selection prefers `gpt-5.2` when available (fallback: first available Codex model)
+- override default with `SONDER_CODEX_MODEL`
 
 ### F) General chat mode
 
@@ -193,10 +198,14 @@ In item mode, action panel supports: `Open Viewer | Delete Item | Exit`.
 
 1. In item mode, tap `Open Viewer`
 2. Select text in snapshot
-3. Create highlight / underline; add notes from annotation cards in sidebar
+3. Create highlight / underline; use each annotation card's inline note editor (`Add note` / `Edit note`)
 4. Ask follow-up questions in Telegram plain text
 
 Viewer note: snapshot rendering disables active scripts/iframes/refresh directives at view time to keep pages stable for reading and annotation.
+
+Time display note:
+- Telegram and viewer UI timestamps are formatted in `Asia/Shanghai` (`UTC+8`) for consistent daily usage.
+- Persisted storage timestamps remain UTC ISO strings.
 
 ## Additional technical docs
 

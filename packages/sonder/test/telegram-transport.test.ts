@@ -1179,6 +1179,7 @@ describe("TelegramBotRunner", () => {
 		expect(api.sent[0].inlineKeyboard?.[0]?.[1]?.text).toBe("Exit");
 		expect(api.sent[0].text).toContain("Session: active");
 		expect(api.sent[0].text).toContain("Recent activity:");
+		expect(api.sent[0].text).toContain("(UTC+8)");
 		expect(api.sent[1].text).toContain("🧠 In: item_panel");
 		expect(api.sent[1].text).toContain("Item answer: hello panel");
 		expect(api.sent[2].text).toContain("Exited active dialogue mode");

@@ -191,6 +191,10 @@ function renderViewerPage(itemId: string): string {
       .annotation-tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #f3f5f9; border: 1px solid #e2e7f0; color: #56607a; }
       .annotation-meta { font-size: 11px; color: #8a93a6; margin-top: 8px; }
       .annotation-actions { display: flex; gap: 8px; margin-top: 8px; }
+      .annotation-note-editor { margin-top: 8px; padding: 8px; border: 1px solid #dbe2ef; border-radius: 8px; background: #f8faff; display: flex; flex-direction: column; gap: 8px; }
+      .annotation-note-editor[hidden] { display: none; }
+      .annotation-note-input { width: 100%; min-height: 80px; border: 1px solid #ccd6ea; border-radius: 8px; padding: 8px; font: inherit; line-height: 1.45; resize: vertical; box-sizing: border-box; background: #fff; color: #1f2430; }
+      .annotation-note-actions { display: flex; gap: 8px; }
     </style>
   </head>
   <body>
@@ -231,6 +235,28 @@ function renderViewerPage(itemId: string): string {
       let overlayStatuses = {};
       let activeFilterKind = 'all';
       let activeTagFilter = null;
+      const DISPLAY_TIME_ZONE = 'Asia/Shanghai';
+      const DISPLAY_TIME_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: DISPLAY_TIME_ZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      });
+
+      function formatDisplayTime(rawValue) {
+        if (typeof rawValue !== 'string') {
+          return '';
+        }
+        const parsed = Date.parse(rawValue);
+        if (!Number.isFinite(parsed)) {
+          return rawValue;
+        }
+        return DISPLAY_TIME_FORMATTER.format(parsed) + ' (UTC+8)';
+      }
 
       function toCssPath(element) {
         if (!element || element.nodeType !== Node.ELEMENT_NODE) {
@@ -470,7 +496,7 @@ function renderViewerPage(itemId: string): string {
 
           const metaLine = document.createElement('div');
           metaLine.className = 'annotation-meta';
-          metaLine.textContent = annotation.createdAt;
+          metaLine.textContent = formatDisplayTime(annotation.createdAt);
           wrapper.appendChild(metaLine);
 
           const actions = document.createElement('div');
@@ -486,11 +512,59 @@ function renderViewerPage(itemId: string): string {
             actions.appendChild(repair);
           }
 
+          const noteEditor = document.createElement('div');
+          noteEditor.className = 'annotation-note-editor';
+          noteEditor.hidden = true;
+          noteEditor.onclick = (event) => {
+            event.stopPropagation();
+          };
+
+          const noteInput = document.createElement('textarea');
+          noteInput.className = 'annotation-note-input';
+          noteInput.placeholder = 'Write a note for this annotation...';
+          noteInput.value = annotation.comment || '';
+          noteEditor.appendChild(noteInput);
+
+          const noteEditorActions = document.createElement('div');
+          noteEditorActions.className = 'annotation-note-actions';
+
+          const saveNote = document.createElement('button');
+          saveNote.textContent = 'Save note';
+          saveNote.onclick = async (event) => {
+            event.stopPropagation();
+            try {
+              await persistAnnotationComment(annotation.id, noteInput.value);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              window.alert(message || 'Failed to update note');
+              return;
+            }
+            await loadAnnotations();
+          };
+          noteEditorActions.appendChild(saveNote);
+
+          const cancelNote = document.createElement('button');
+          cancelNote.textContent = 'Cancel';
+          cancelNote.onclick = (event) => {
+            event.stopPropagation();
+            noteInput.value = annotation.comment || '';
+            noteEditor.hidden = true;
+          };
+          noteEditorActions.appendChild(cancelNote);
+
+          noteEditor.appendChild(noteEditorActions);
+
           const note = document.createElement('button');
           note.textContent = annotation.comment ? 'Edit note' : 'Add note';
-          note.onclick = async (event) => {
+          note.onclick = (event) => {
             event.stopPropagation();
-            await editAnnotationNote(annotation);
+            noteInput.value = annotation.comment || '';
+            noteEditor.hidden = !noteEditor.hidden;
+            if (!noteEditor.hidden) {
+              noteInput.focus();
+              noteInput.selectionStart = noteInput.value.length;
+              noteInput.selectionEnd = noteInput.value.length;
+            }
           };
           actions.appendChild(note);
 
@@ -513,6 +587,7 @@ function renderViewerPage(itemId: string): string {
           actions.appendChild(del);
 
           wrapper.appendChild(actions);
+          wrapper.appendChild(noteEditor);
 
           annRoot.appendChild(wrapper);
         }
@@ -734,22 +809,16 @@ function renderViewerPage(itemId: string): string {
         refreshSnapshot();
       }
 
-      async function editAnnotationNote(annotation) {
-        const nextComment = window.prompt('Add note for this annotation', annotation.comment || '');
-        if (nextComment === null) {
-          return;
-        }
-        const response = await fetch('/viewer/api/annotations/' + encodeURIComponent(annotation.id), {
+      async function persistAnnotationComment(annotationId, nextComment) {
+        const response = await fetch('/viewer/api/annotations/' + encodeURIComponent(annotationId), {
           method: 'PATCH',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ comment: nextComment.trim() || null }),
         });
         if (!response.ok) {
           const content = await response.text();
-          window.alert(content || 'Failed to update note');
-          return;
+          throw new Error(content || 'Failed to update note');
         }
-        await loadAnnotations();
       }
 
       async function editAnnotation(annotation) {

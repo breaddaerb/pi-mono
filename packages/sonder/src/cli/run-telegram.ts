@@ -1,6 +1,6 @@
 import type { Writable } from "node:stream";
 import { SonderApp } from "../app/index.js";
-import { TelegramBotRunner, TelegramHttpApi } from "../transport/telegram.js";
+import { type TelegramBotCommand, TelegramBotRunner, TelegramHttpApi } from "../transport/telegram.js";
 import { startViewerServer } from "../viewer/index.js";
 import { createRuntimeResponderFromEnv } from "./responder-from-env.js";
 
@@ -18,6 +18,37 @@ export interface RunTelegramOptions {
 }
 
 const DEFAULT_ROOT_DIR = ".sonder";
+
+export const DEFAULT_TELEGRAM_COMMAND_SUGGESTIONS: TelegramBotCommand[] = [
+	{ command: "save", description: "Save URL with optional tags/text" },
+	{ command: "find", description: "Search saved items" },
+	{ command: "list", description: "List recent items" },
+	{ command: "open", description: "Open item mode or general chat" },
+	{ command: "sessions", description: "Show item dialogue sessions" },
+	{ command: "history", description: "Show dialogue history" },
+	{ command: "where", description: "Show active mode/session" },
+	{ command: "models", description: "Switch Codex model" },
+	{ command: "exit", description: "Exit active mode" },
+];
+
+function formatErrorMessage(error: unknown): string {
+	if (error instanceof Error) {
+		return error.message;
+	}
+	return String(error);
+}
+
+export async function configureTelegramCommandSuggestions(
+	api: { setMyCommands: (commands: TelegramBotCommand[]) => Promise<void> },
+	stderr: Writable,
+): Promise<void> {
+	try {
+		await api.setMyCommands(DEFAULT_TELEGRAM_COMMAND_SUGGESTIONS);
+		stderr.write(`[telegram] command suggestions registered (${DEFAULT_TELEGRAM_COMMAND_SUGGESTIONS.length})\n`);
+	} catch (error) {
+		stderr.write(`[telegram] setMyCommands failed: ${formatErrorMessage(error)}\n`);
+	}
+}
 
 function parseArgs(args: string[]): ParsedTelegramArgs | null {
 	let rootDir = DEFAULT_ROOT_DIR;
@@ -133,6 +164,7 @@ export async function runTelegramMode(
 		stderr.write(`[telegram] using proxy: ${proxyUrl}\n`);
 	}
 	const api = new TelegramHttpApi(token, options.fetchImpl, { proxyUrl });
+	await configureTelegramCommandSuggestions(api, stderr);
 	const runner = new TelegramBotRunner(api, app, {
 		stderr,
 		getViewerItemUrl: viewerServer.getItemUrl,

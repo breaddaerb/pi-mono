@@ -11,8 +11,17 @@ export interface CodexModelSelector {
 	setSelectedModelId: (modelId: string) => boolean;
 }
 
+export const DEFAULT_PREFERRED_CODEX_MODEL_ID = "gpt-5.2";
+
 function listCodexModelOptions(): CodexModelOption[] {
 	return getModels("openai-codex").map((model) => ({ id: model.id }));
+}
+
+function resolveDefaultCodexModelId(modelIds: string[]): string {
+	if (modelIds.includes(DEFAULT_PREFERRED_CODEX_MODEL_ID)) {
+		return DEFAULT_PREFERRED_CODEX_MODEL_ID;
+	}
+	return modelIds[0] ?? DEFAULT_PREFERRED_CODEX_MODEL_ID;
 }
 
 function resolveCodexModel(modelId?: string): Model<"openai-codex-responses"> {
@@ -21,6 +30,11 @@ function resolveCodexModel(modelId?: string): Model<"openai-codex-responses"> {
 		throw new Error("No openai-codex models available in registry.");
 	}
 	if (!modelId) {
+		const defaultId = resolveDefaultCodexModelId(models.map((model) => model.id));
+		const selectedDefault = models.find((model) => model.id === defaultId);
+		if (selectedDefault) {
+			return selectedDefault;
+		}
 		return models[0];
 	}
 	const selected = models.find((model) => model.id === modelId);
@@ -35,7 +49,7 @@ export function createCodexModelSelector(initialModelId?: string): CodexModelSel
 	if (models.length === 0) {
 		throw new Error("No openai-codex models available in registry.");
 	}
-	let selectedModelId = initialModelId ?? models[0].id;
+	let selectedModelId = initialModelId ?? resolveDefaultCodexModelId(models.map((model) => model.id));
 	if (!models.some((model) => model.id === selectedModelId)) {
 		throw new Error(`Unknown Codex model: ${selectedModelId}`);
 	}

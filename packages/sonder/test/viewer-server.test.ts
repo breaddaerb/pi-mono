@@ -237,6 +237,11 @@ describe("viewer server", () => {
 			expect(page).toContain('data-filter-kind="highlight"');
 			expect(page).toContain('data-filter-kind="unresolved"');
 			expect(page).toContain("Repair anchor");
+			expect(page).toContain("annotation-note-editor");
+			expect(page).toContain("Save note");
+			expect(page).toContain("Asia/Shanghai");
+			expect(page).toContain("formatDisplayTime");
+			expect(page).not.toContain("Add note for this annotation");
 			expect(page).not.toContain("btnNote");
 
 			const snapshotResponse = await fetch(`${viewer.baseUrl}/viewer/items/item_view/snapshot`);

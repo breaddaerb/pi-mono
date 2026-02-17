@@ -1,6 +1,11 @@
 import { Writable } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { runTelegramCheckMode, runTelegramMode } from "../src/cli/run-telegram.js";
+import {
+	configureTelegramCommandSuggestions,
+	DEFAULT_TELEGRAM_COMMAND_SUGGESTIONS,
+	runTelegramCheckMode,
+	runTelegramMode,
+} from "../src/cli/run-telegram.js";
 
 class MemoryWritable extends Writable {
 	private chunks: string[] = [];
@@ -73,5 +78,34 @@ describe("runTelegramMode", () => {
 				delete process.env.SONDER_TELEGRAM_BOT_TOKEN;
 			}
 		}
+	});
+
+	it("registers telegram command suggestions via setMyCommands", async () => {
+		const stderr = new MemoryWritable();
+		let receivedCommands: Array<{ command: string; description: string }> = [];
+		await configureTelegramCommandSuggestions(
+			{
+				setMyCommands: async (commands) => {
+					receivedCommands = commands;
+				},
+			},
+			stderr,
+		);
+
+		expect(receivedCommands).toEqual(DEFAULT_TELEGRAM_COMMAND_SUGGESTIONS);
+		expect(stderr.getText()).toContain("command suggestions registered");
+	});
+
+	it("logs setMyCommands failures and continues", async () => {
+		const stderr = new MemoryWritable();
+		await configureTelegramCommandSuggestions(
+			{
+				setMyCommands: async () => {
+					throw new Error("forbidden");
+				},
+			},
+			stderr,
+		);
+		expect(stderr.getText()).toContain("setMyCommands failed: forbidden");
 	});
 });

@@ -20,5 +20,6 @@ export {
 	type CodexResponderOptions,
 	createCodexModelSelector,
 	createCodexResponder,
+	DEFAULT_PREFERRED_CODEX_MODEL_ID,
 } from "./responders/codex-responder.js";
 export { createStubResponder } from "./responders/stub-responder.js";

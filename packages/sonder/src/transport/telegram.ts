@@ -40,6 +40,11 @@ interface TelegramSendMessageResponse {
 	ok: boolean;
 }
 
+export interface TelegramBotCommand {
+	command: string;
+	description: string;
+}
+
 interface TelegramFetchInit {
 	method: "POST";
 	headers: Record<string, string>;
@@ -201,6 +206,22 @@ export class TelegramHttpApi implements TelegramApi {
 		}
 	}
 
+	async setMyCommands(commands: TelegramBotCommand[]): Promise<void> {
+		const response = await this.fetchImpl(
+			`${this.baseUrl}/setMyCommands`,
+			this.buildRequest({
+				commands: commands.map((command) => ({ command: command.command, description: command.description })),
+			}),
+		);
+		if (!response.ok) {
+			throw new Error(`Telegram setMyCommands failed: HTTP ${response.status}`);
+		}
+		const payload = (await response.json()) as TelegramSendMessageResponse;
+		if (!payload.ok) {
+			throw new Error("Telegram setMyCommands returned ok=false");
+		}
+	}
+
 	async answerCallbackQuery(callbackQueryId: string): Promise<void> {
 		const response = await this.fetchImpl(
 			`${this.baseUrl}/answerCallbackQuery`,
@@ -217,6 +238,25 @@ export class TelegramHttpApi implements TelegramApi {
 }
 
 const FIND_MENU_TTL_MS = 15 * 60 * 1000;
+const DISPLAY_TIME_ZONE = "Asia/Shanghai";
+const DISPLAY_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+	timeZone: DISPLAY_TIME_ZONE,
+	year: "numeric",
+	month: "2-digit",
+	day: "2-digit",
+	hour: "2-digit",
+	minute: "2-digit",
+	second: "2-digit",
+	hour12: false,
+});
+
+function formatDisplayTime(timestamp: string): string {
+	const parsed = Date.parse(timestamp);
+	if (!Number.isFinite(parsed)) {
+		return timestamp;
+	}
+	return `${DISPLAY_TIME_FORMATTER.format(parsed)} (UTC+8)`;
+}
 
 type MenuKind = "find" | "list";
 
@@ -446,7 +486,7 @@ export class TelegramBotRunner {
 				menu.kind === "find" && entry.snippets.length > 0
 					? `\n   match: ${truncateMiddle(entry.snippets[0], 120)}`
 					: "";
-			return `${index + 1}. ${truncateMiddle(entry.originalUrl, 96)}${tags}\n   ${entry.sourceType} · ${entry.createdAt}${reasonLine}${snippetLine}`;
+			return `${index + 1}. ${truncateMiddle(entry.originalUrl, 96)}${tags}\n   ${entry.sourceType} · ${formatDisplayTime(entry.createdAt)}${reasonLine}${snippetLine}`;
 		});
 		const filterSummary = `Filters: Time=${this.formatTimeFilter(menu.time)} | Source=${this.formatSourceFilter(menu.source)} | Tag=${menu.tag ?? "Any"} | Sort=${this.formatSortFilter(menu.sort)}`;
 		return `${title} (${paged.total}) [page ${paged.page + 1}/${paged.totalPages}]\n${filterSummary}\n\n${rows.join("\n\n")}`;
@@ -835,7 +875,7 @@ export class TelegramBotRunner {
 		const sessions = this.app.listItemDialogues(itemId);
 		const sessionsCount = sessions.length;
 		const recentAt = sessions.map((session) => session.createdAt).sort((left, right) => right.localeCompare(left))[0];
-		const recentLine = recentAt ? `\nRecent activity: ${recentAt}` : "";
+		const recentLine = recentAt ? `\nRecent activity: ${formatDisplayTime(recentAt)}` : "";
 		const summary = `\nSession: active • ${turns} turns\nRecent sessions: ${sessionsCount}${recentLine}`;
 		await this.api.sendMessage(chatId, `${header}${summary}${viewerLine}\nSend messages directly. /exit to leave.`, {
 			inlineKeyboard: this.buildItemModeKeyboard(Boolean(viewerUrl)),
@@ -1148,7 +1188,7 @@ export class TelegramBotRunner {
 					const fullContent = turn.content || (turn.status === "failed" ? "(assistant turn failed)" : "(empty)");
 					const statusLine = `Status: ${turn.status}`;
 					const errorLine = turn.errorMessage ? `\nError: ${turn.errorMessage}` : "";
-					const fullText = `History turn ${index} (page ${safePage + 1})\nRole: ${turn.role}\n${statusLine}${errorLine}\nTime: ${turn.createdAt}\n\n${fullContent}`;
+					const fullText = `History turn ${index} (page ${safePage + 1})\nRole: ${turn.role}\n${statusLine}${errorLine}\nTime: ${formatDisplayTime(turn.createdAt)}\n\n${fullContent}`;
 					for (const chunk of splitForTelegram(fullText)) {
 						await this.api.sendMessage(chatId, chunk);
 					}
@@ -1443,7 +1483,7 @@ export class TelegramBotRunner {
 				await this.api.sendMessage(chatId, `No sessions for current item.`);
 				return;
 			}
-			const lines = sessions.map((session, index) => `${index + 1}. ${session.createdAt}`);
+			const lines = sessions.map((session, index) => `${index + 1}. ${formatDisplayTime(session.createdAt)}`);
 			const menuId = this.createSessionMenu(
 				chatId,
 				itemId,
