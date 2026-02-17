@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { captureSnapshot } from "../snapshot/snapshot-service.js";
+import { buildAcquisitionAttempt } from "./acquisition.js";
 import type { SourceAdapter, SourceCaptureInput, SourceCaptureResult } from "./types.js";
 import { looksLikeLoginWall, mapFailureCodeToSourceStatus, mapSnapshotFailureToReasonCode } from "./utils.js";
 
@@ -23,43 +24,43 @@ export class TwitterSourceAdapter implements SourceAdapter {
 			dataRootDir: input.dataRootDir,
 			fetchImpl: input.fetchImpl,
 		});
-		const status = mapFailureCodeToSourceStatus(snapshot.failureCode);
-		if (status !== "ok") {
-			return {
-				platform: "twitter",
-				status,
-				reason: snapshot.failureReason,
-				reasonCode: mapSnapshotFailureToReasonCode(snapshot.failureCode, snapshot.failureReason),
-				reasonHint: snapshot.failureReason,
-				debug: null,
-				usable: false,
-				snapshot,
-			};
+		let status = mapFailureCodeToSourceStatus(snapshot.failureCode);
+		let reason = snapshot.failureReason;
+		let reasonCode = mapSnapshotFailureToReasonCode(snapshot.failureCode, snapshot.failureReason);
+		let reasonHint = snapshot.failureReason;
+
+		if (status === "ok") {
+			const extracted = readFileSync(snapshot.extractedTextPath, "utf8");
+			if (looksLikeLoginWall(extracted) || looksLikeTwitterGate(extracted) || extracted.trim().length < 32) {
+				status = "login_required";
+				reason = "Twitter/X returned login-gated or unusable page content.";
+				reasonCode = "TWITTER_LOGIN_WALL";
+				reasonHint = reason;
+			}
 		}
 
-		const extracted = readFileSync(snapshot.extractedTextPath, "utf8");
-		if (looksLikeLoginWall(extracted) || looksLikeTwitterGate(extracted) || extracted.trim().length < 32) {
-			return {
-				platform: "twitter",
-				status: "login_required",
-				reason: "Twitter/X returned login-gated or unusable page content.",
-				reasonCode: "TWITTER_LOGIN_WALL",
-				reasonHint: "Twitter/X returned login-gated or unusable page content.",
-				debug: null,
-				usable: false,
-				snapshot,
-			};
-		}
+		const attempt = buildAcquisitionAttempt({
+			method: "direct_fetch",
+			inputUrl: input.url,
+			effectiveUrl: input.url,
+			status,
+			reasonCode,
+			reasonHint,
+			debug: null,
+			snapshot,
+		});
 
 		return {
 			platform: "twitter",
-			status: "ok",
-			reason: null,
-			reasonCode: null,
-			reasonHint: null,
+			status,
+			reason,
+			reasonCode,
+			reasonHint,
 			debug: null,
-			usable: true,
+			usable: status === "ok",
 			snapshot,
+			acquisitionMethod: "direct_fetch",
+			attempts: [attempt],
 		};
 	}
 }

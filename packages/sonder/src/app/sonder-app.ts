@@ -4,7 +4,12 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { type ParseTelegramCommandError, parseTelegramCommand } from "../commands/parse-command.js";
 import { type AskResponder, AskService } from "../runtime/ask-service.js";
-import { captureFromSource, type SourcePlatform, type SourceStatus } from "../sources/index.js";
+import {
+	captureFromSource,
+	type SourceAcquisitionMethod,
+	type SourcePlatform,
+	type SourceStatus,
+} from "../sources/index.js";
 import { cleanExtractedTextForPlatform, detectSourcePlatform } from "../sources/utils.js";
 import {
 	AnnotationsRepo,
@@ -100,6 +105,8 @@ export interface SonderFindItem {
 
 export type SonderSaveSourceStatus = SourceStatus;
 
+export type SonderSaveAcquisitionMethod = SourceAcquisitionMethod;
+
 export type SonderSourcePlatform = SourcePlatform;
 
 export type SonderEvidenceType = "snapshot" | "pasted_text" | "fallback_text";
@@ -113,6 +120,7 @@ export type SonderCommandResult =
 			url: string;
 			tags: string[];
 			sourcePlatform: SonderSourcePlatform;
+			sourceAcquisitionMethod: SonderSaveAcquisitionMethod;
 			sourceStatus: SonderSaveSourceStatus;
 			sourceStatusReason: string | null;
 			evidenceType: SonderEvidenceType;
@@ -527,6 +535,23 @@ export class SonderApp {
 				fetchImpl: this.options.snapshotFetchImpl,
 			});
 			const snapshot = sourceCapture.snapshot;
+			const acquisitionReportPath = join(snapshot.itemDirectory, "acquisition-report.json");
+			writeFileSync(
+				acquisitionReportPath,
+				JSON.stringify(
+					{
+						itemId,
+						inputUrl: url,
+						platform: sourceCapture.platform,
+						winnerMethod: sourceCapture.acquisitionMethod,
+						winnerStatus: sourceCapture.status,
+						attempts: sourceCapture.attempts,
+					},
+					null,
+					2,
+				),
+				"utf8",
+			);
 
 			const normalizedPastedText = this.normalizePastedText(pastedText);
 			const autoDerivedEvidenceText = this.deriveAutoEvidenceText({
@@ -552,6 +577,9 @@ export class SonderApp {
 				this.createArtifact(itemId, "snapshot-assets", snapshot.snapshotAssetsDirectory, "application/json"),
 			);
 			artifactsToPersist.push(this.createArtifact(itemId, "extracted-text", extractedTextPath, "text/plain"));
+			artifactsToPersist.push(
+				this.createArtifact(itemId, "acquisition-report", acquisitionReportPath, "application/json"),
+			);
 
 			if (snapshot.snapshotHtmlPath && !usePastedEvidence) {
 				artifactsToPersist.push(
@@ -577,8 +605,9 @@ export class SonderApp {
 			});
 
 			const sourcePlatform = sourceCapture.platform;
+			const sourceAcquisitionMethod = sourceCapture.acquisitionMethod;
 			const sourceStatus = sourceCapture.status;
-			const sourceStatusReason = sourceCapture.reason;
+			const sourceStatusReason = sourceCapture.reasonHint ?? sourceCapture.reason;
 			const evidenceType: SonderEvidenceType = usePastedEvidence
 				? "pasted_text"
 				: sourceCapture.usable
@@ -593,6 +622,7 @@ export class SonderApp {
 				url,
 				tags,
 				sourcePlatform,
+				sourceAcquisitionMethod,
 				sourceStatus,
 				sourceStatusReason,
 				evidenceType,

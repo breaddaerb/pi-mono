@@ -33,6 +33,32 @@ Telegram-first conversational PKM for item-anchored thinking.
 
 When status indicates the link is not usable, Sonder asks for pasted evidence unless it can auto-derive usable cleaned evidence (currently for some Xiaohongshu pages).
 
+### Acquisition policy (important)
+
+- Sonder always tries `direct_fetch` first.
+- If direct fetch is non-OK (for example `risk_control`, `login_required`, `forbidden`, `unsupported`), Sonder automatically tries `reader_proxy` via `https://r.jina.ai/<url>`.
+- If both fail, Sonder falls back to pasted-evidence flow (`/save <url> <pasted text>`).
+
+URL/provenance behavior:
+- `item.originalUrl` remains the original URL you sent.
+- Proxy URLs are not stored as the canonical item URL.
+- Acquisition attempts/winner are recorded in `acquisition-report.json` artifact for audit/debug.
+
+Source-specific summary:
+- Generic web / Substack-like pages:
+  - `direct_fetch` first
+  - then `reader_proxy` fallback on non-OK outcomes
+- X/Twitter:
+  - `direct_fetch` first (login-wall heuristics applied)
+  - then `reader_proxy` fallback when direct is non-OK
+- WeChat:
+  - `direct_fetch` first with WeChat-specific browser-like profile, redirect tracing, cookie carry-over, and one profile retry
+  - if still non-OK (for example `risk_control`), then `reader_proxy` fallback
+- Xiaohongshu:
+  - `direct_fetch` first with boilerplate quality checks
+  - optional auto-derived cleaned evidence path
+  - `reader_proxy` fallback for non-OK direct outcomes
+
 ## Quick start
 
 From repo root:
@@ -118,8 +144,9 @@ Behavior:
 - Sonder stores pasted text as evidence (`evidence.md` + extracted text)
 - Viewer prefers pasted evidence content when available
 - Opens item mode immediately when pasted evidence is present
+- For non-OK direct acquisition outcomes (for example risk control/login walls), Sonder tries a `reader_proxy` fallback (`https://r.jina.ai/<url>`) before requiring pasted evidence
 - For some XHS pages classified as noisy/blocked, Sonder can auto-derive cleaned evidence text and route it through the same evidence path
-- If no usable evidence is available, Sonder saves fallback metadata and asks you to re-send with pasted text
+- If no usable evidence is available after fallback attempts, Sonder saves fallback metadata and asks you to re-send with pasted text
 
 ### C) Discover first, then open
 

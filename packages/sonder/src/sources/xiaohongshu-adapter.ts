@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { captureSnapshot } from "../snapshot/snapshot-service.js";
+import { buildAcquisitionAttempt } from "./acquisition.js";
 import type { SourceAdapter, SourceCaptureInput, SourceCaptureResult } from "./types.js";
 import {
 	cleanXiaohongshuExtractedText,
@@ -16,44 +17,44 @@ export class XiaohongshuSourceAdapter implements SourceAdapter {
 			dataRootDir: input.dataRootDir,
 			fetchImpl: input.fetchImpl,
 		});
-		const status = mapFailureCodeToSourceStatus(snapshot.failureCode);
-		if (status !== "ok") {
-			return {
-				platform: "xiaohongshu",
-				status,
-				reason: snapshot.failureReason,
-				reasonCode: mapSnapshotFailureToReasonCode(snapshot.failureCode, snapshot.failureReason),
-				reasonHint: snapshot.failureReason,
-				debug: null,
-				usable: false,
-				snapshot,
-			};
+		let status = mapFailureCodeToSourceStatus(snapshot.failureCode);
+		let reason = snapshot.failureReason;
+		let reasonCode = mapSnapshotFailureToReasonCode(snapshot.failureCode, snapshot.failureReason);
+		let reasonHint = snapshot.failureReason;
+
+		if (status === "ok") {
+			const extracted = readFileSync(snapshot.extractedTextPath, "utf8");
+			const cleaned = cleanXiaohongshuExtractedText(extracted);
+			if (looksMostlyBoilerplateForXiaohongshu(extracted, cleaned)) {
+				status = "unsupported";
+				reason = "Xiaohongshu page appears mostly boilerplate and is not reliable evidence.";
+				reasonCode = "XHS_BOILERPLATE_ONLY";
+				reasonHint = reason;
+			}
 		}
 
-		const extracted = readFileSync(snapshot.extractedTextPath, "utf8");
-		const cleaned = cleanXiaohongshuExtractedText(extracted);
-		if (looksMostlyBoilerplateForXiaohongshu(extracted, cleaned)) {
-			return {
-				platform: "xiaohongshu",
-				status: "unsupported",
-				reason: "Xiaohongshu page appears mostly boilerplate and is not reliable evidence.",
-				reasonCode: "XHS_BOILERPLATE_ONLY",
-				reasonHint: "Xiaohongshu page appears mostly boilerplate and is not reliable evidence.",
-				debug: null,
-				usable: false,
-				snapshot,
-			};
-		}
+		const attempt = buildAcquisitionAttempt({
+			method: "direct_fetch",
+			inputUrl: input.url,
+			effectiveUrl: input.url,
+			status,
+			reasonCode,
+			reasonHint,
+			debug: null,
+			snapshot,
+		});
 
 		return {
 			platform: "xiaohongshu",
-			status: "ok",
-			reason: null,
-			reasonCode: null,
-			reasonHint: null,
+			status,
+			reason,
+			reasonCode,
+			reasonHint,
 			debug: null,
-			usable: true,
+			usable: status === "ok",
 			snapshot,
+			acquisitionMethod: "direct_fetch",
+			attempts: [attempt],
 		};
 	}
 }

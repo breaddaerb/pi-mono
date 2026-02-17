@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { captureSnapshot } from "../snapshot/snapshot-service.js";
+import { buildAcquisitionAttempt } from "./acquisition.js";
 import type { SourceAdapter, SourceCaptureInput, SourceCaptureResult } from "./types.js";
 import { looksLikeLoginWall, mapFailureCodeToSourceStatus, mapSnapshotFailureToReasonCode } from "./utils.js";
 import {
@@ -34,6 +35,40 @@ function classifyWechatHttpStatus(httpStatus: number): SourceCaptureResult["stat
 		return "not_found";
 	}
 	return "error";
+}
+
+function buildWechatDirectResult(input: {
+	url: string;
+	snapshot: SourceCaptureResult["snapshot"];
+	status: SourceCaptureResult["status"];
+	reason: string | null;
+	reasonCode: string | null;
+	reasonHint: string | null;
+	debug: SourceCaptureResult["debug"];
+}): SourceCaptureResult {
+	const effectiveUrl = input.debug?.finalUrl ?? input.url;
+	const attempt = buildAcquisitionAttempt({
+		method: "direct_fetch",
+		inputUrl: input.url,
+		effectiveUrl,
+		status: input.status,
+		reasonCode: input.reasonCode,
+		reasonHint: input.reasonHint,
+		debug: input.debug,
+		snapshot: input.snapshot,
+	});
+	return {
+		platform: "wechat",
+		status: input.status,
+		reason: input.reason,
+		reasonCode: input.reasonCode,
+		reasonHint: input.reasonHint,
+		debug: input.debug,
+		usable: input.status === "ok",
+		snapshot: input.snapshot,
+		acquisitionMethod: "direct_fetch",
+		attempts: [attempt],
+	};
 }
 
 export class WechatSourceAdapter implements SourceAdapter {
@@ -80,16 +115,15 @@ export class WechatSourceAdapter implements SourceAdapter {
 
 		const riskControl = detectWechatRiskControl(selectedAttempt.trace);
 		if (riskControl.isRiskControl) {
-			return {
-				platform: "wechat",
+			return buildWechatDirectResult({
+				url: input.url,
+				snapshot: selectedAttempt.snapshot,
 				status: "risk_control",
 				reason: riskControl.reasonHint,
 				reasonCode: riskControl.reasonCode,
 				reasonHint: riskControl.reasonHint,
 				debug: toDebug(selectedAttempt.trace),
-				usable: false,
-				snapshot: selectedAttempt.snapshot,
-			};
+			});
 		}
 
 		const status = mapFailureCodeToSourceStatus(selectedAttempt.snapshot.failureCode);
@@ -101,56 +135,52 @@ export class WechatSourceAdapter implements SourceAdapter {
 			const httpStatus = selectedAttempt.trace.httpStatus;
 			const resolvedStatus =
 				httpStatus === 403 || httpStatus === 404 ? classifyWechatHttpStatus(httpStatus) : status;
-			return {
-				platform: "wechat",
+			return buildWechatDirectResult({
+				url: input.url,
+				snapshot: selectedAttempt.snapshot,
 				status: resolvedStatus,
 				reason: selectedAttempt.snapshot.failureReason,
 				reasonCode,
 				reasonHint: selectedAttempt.snapshot.failureReason,
 				debug: toDebug(selectedAttempt.trace),
-				usable: false,
-				snapshot: selectedAttempt.snapshot,
-			};
+			});
 		}
 
 		const extracted = readFileSync(selectedAttempt.snapshot.extractedTextPath, "utf8");
 		if (looksLikeLoginWall(extracted)) {
 			const reason = "WeChat returned login-gated content instead of article text.";
-			return {
-				platform: "wechat",
+			return buildWechatDirectResult({
+				url: input.url,
+				snapshot: selectedAttempt.snapshot,
 				status: "login_required",
 				reason,
 				reasonCode: "WECHAT_LOGIN_WALL",
 				reasonHint: reason,
 				debug: toDebug(selectedAttempt.trace),
-				usable: false,
-				snapshot: selectedAttempt.snapshot,
-			};
+			});
 		}
 
 		if (extracted.trim().length < MIN_WECHAT_EXTRACTED_TEXT_LENGTH) {
 			const reason = "WeChat response is too short to be reliable evidence.";
-			return {
-				platform: "wechat",
+			return buildWechatDirectResult({
+				url: input.url,
+				snapshot: selectedAttempt.snapshot,
 				status: "unsupported",
 				reason,
 				reasonCode: "WECHAT_CONTENT_TOO_SHORT",
 				reasonHint: reason,
 				debug: toDebug(selectedAttempt.trace),
-				usable: false,
-				snapshot: selectedAttempt.snapshot,
-			};
+			});
 		}
 
-		return {
-			platform: "wechat",
+		return buildWechatDirectResult({
+			url: input.url,
+			snapshot: selectedAttempt.snapshot,
 			status: "ok",
 			reason: null,
 			reasonCode: null,
 			reasonHint: null,
 			debug: toDebug(selectedAttempt.trace),
-			usable: true,
-			snapshot: selectedAttempt.snapshot,
-		};
+		});
 	}
 }

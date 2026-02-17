@@ -72,6 +72,7 @@ export function formatCommandResult(result: Awaited<ReturnType<SonderApp["proces
 					? "pasted-text evidence mode"
 					: "fallback text mode";
 		const tags = result.value.tags.length > 0 ? `\nTags: ${result.value.tags.map((tag) => `#${tag}`).join(" ")}` : "";
+		const acquisition = `\nAcquisition: ${result.value.sourceAcquisitionMethod}`;
 		const source = `\nSource: ${result.value.sourcePlatform} · ${result.value.sourceStatus}`;
 		const reason = result.value.sourceStatusReason
 			? `\nReason: ${truncateMiddle(result.value.sourceStatusReason, 180)}`
@@ -85,6 +86,7 @@ export function formatCommandResult(result: Awaited<ReturnType<SonderApp["proces
 				`Capture: ${mode}`,
 				`Artifacts: ${result.value.artifactIds.length}`,
 			].join("\n") +
+			acquisition +
 			source +
 			reason +
 			tags +

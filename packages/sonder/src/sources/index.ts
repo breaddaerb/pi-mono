@@ -1,4 +1,6 @@
+import { shouldAttemptReaderProxyFallback } from "./acquisition.js";
 import { GenericSourceAdapter } from "./generic-adapter.js";
+import { captureFromReaderProxy } from "./reader-proxy.js";
 import { TwitterSourceAdapter } from "./twitter-adapter.js";
 import type { SourceAdapter, SourceCaptureInput, SourceCaptureResult, SourcePlatform } from "./types.js";
 import { detectSourcePlatform } from "./utils.js";
@@ -21,10 +23,32 @@ function createAdapter(platform: SourcePlatform): SourceAdapter {
 export async function captureFromSource(input: SourceCaptureInput): Promise<SourceCaptureResult> {
 	const platform = detectSourcePlatform(input.url);
 	const adapter = createAdapter(platform);
-	return adapter.capture(input);
+	const directResult = await adapter.capture(input);
+	if (!shouldAttemptReaderProxyFallback(directResult.status, input.url)) {
+		return directResult;
+	}
+
+	const readerResult = await captureFromReaderProxy({
+		...input,
+		platform,
+	});
+	const attempts = [...directResult.attempts, ...readerResult.attempts];
+	if (readerResult.usable) {
+		return {
+			...readerResult,
+			attempts,
+		};
+	}
+	return {
+		...directResult,
+		attempts,
+	};
 }
 
 export type {
+	SourceAcquisitionArtifacts,
+	SourceAcquisitionAttempt,
+	SourceAcquisitionMethod,
 	SourceAdapter,
 	SourceCaptureDebug,
 	SourceCaptureInput,

@@ -608,6 +608,50 @@ describe("SonderApp", () => {
 		}
 	});
 
+	it("falls back to reader proxy when direct fetch is login-gated", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+			snapshotFetchImpl: async (input) => {
+				const requestUrl = String(input);
+				if (requestUrl.startsWith("https://r.jina.ai/")) {
+					return new Response(
+						"Reader fallback content: this article body is now available for context and viewer display.",
+						{
+							status: 200,
+							headers: { "content-type": "text/plain; charset=utf-8" },
+						},
+					);
+				}
+				return new Response("<html><body><h1>Please login</h1><p>Sign in required</p></body></html>", {
+					status: 200,
+					headers: { "content-type": "text/html; charset=utf-8" },
+				});
+			},
+		});
+
+		try {
+			const saveResult = await app.saveFromInput({
+				url: "https://substack.com/home/post/p-187332712",
+			});
+			expect(saveResult.sourceStatus).toBe("ok");
+			expect(saveResult.sourceAcquisitionMethod).toBe("reader_proxy");
+			expect(saveResult.needsUserEvidence).toBe(false);
+
+			const artifacts = app.artifactsRepo.listByItemId(saveResult.itemId);
+			expect(artifacts.some((artifact) => artifact.kind === "acquisition-report")).toBe(true);
+		} finally {
+			app.close();
+		}
+	});
+
 	it("marks blocked source as unusable and requests pasted evidence", async () => {
 		const server = await withServer((_request, response) => {
 			response.writeHead(200, { "content-type": "text/html; charset=utf-8" });

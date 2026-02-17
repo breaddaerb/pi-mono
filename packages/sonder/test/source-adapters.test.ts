@@ -126,6 +126,70 @@ describe("source adapters", () => {
 		expect(result.usable).toBe(false);
 	});
 
+	it("uses reader proxy fallback when direct fetch is login-gated", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-source-"));
+		tempDirs.push(root);
+
+		const result = await captureFromSource({
+			itemId: "item_reader_fallback",
+			url: "https://substack.com/home/post/p-187332712",
+			dataRootDir: root,
+			fetchImpl: async (input) => {
+				const requestUrl = String(input);
+				if (requestUrl.startsWith("https://r.jina.ai/")) {
+					return new Response(
+						"Sign up or sign in to personalize your feed.\n\nVisualizing attention can reveal how models route signal through layers, and this post walks through practical steps using bertviz, attention heads, and token-level diagnostics. The article covers setup, rendering pipelines, interpretation caveats, and examples where attention highlights are misleading without gradient-based checks. It also compares notebook flows and production instrumentation for tracing token interactions in longer prompts, then summarizes how to debug prompt failures with layer-by-layer plots and qualitative inspection.",
+						{
+							status: 200,
+							headers: { "content-type": "text/plain; charset=utf-8" },
+						},
+					);
+				}
+				return new Response("<html><body><h1>Please login</h1><p>Sign in to continue</p></body></html>", {
+					status: 200,
+					headers: { "content-type": "text/html; charset=utf-8" },
+				});
+			},
+		});
+
+		expect(result.platform).toBe("web");
+		expect(result.status).toBe("ok");
+		expect(result.usable).toBe(true);
+		expect(result.acquisitionMethod).toBe("reader_proxy");
+		expect(result.attempts).toHaveLength(2);
+		expect(result.attempts[0]?.method).toBe("direct_fetch");
+		expect(result.attempts[1]?.method).toBe("reader_proxy");
+	});
+
+	it("keeps reader proxy login-gated result as non-usable when content is thin", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-source-"));
+		tempDirs.push(root);
+
+		const result = await captureFromSource({
+			itemId: "item_reader_login_thin",
+			url: "https://medium.com/some/gated-post",
+			dataRootDir: root,
+			fetchImpl: async (input) => {
+				const requestUrl = String(input);
+				if (requestUrl.startsWith("https://r.jina.ai/")) {
+					return new Response("Sign in to continue reading.", {
+						status: 200,
+						headers: { "content-type": "text/plain; charset=utf-8" },
+					});
+				}
+				return new Response("<html><body><h1>Forbidden</h1></body></html>", {
+					status: 403,
+					headers: { "content-type": "text/html; charset=utf-8" },
+				});
+			},
+		});
+
+		expect(result.status).toBe("login_required");
+		expect(result.usable).toBe(false);
+		expect(result.acquisitionMethod).toBe("direct_fetch");
+		expect(result.attempts).toHaveLength(2);
+	});
+
 	it("keeps arxiv html as usable", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-source-"));
 		tempDirs.push(root);
@@ -146,5 +210,7 @@ describe("source adapters", () => {
 		expect(result.platform).toBe("arxiv");
 		expect(result.status).toBe("ok");
 		expect(result.usable).toBe(true);
+		expect(result.acquisitionMethod).toBe("direct_fetch");
+		expect(result.attempts).toHaveLength(1);
 	});
 });

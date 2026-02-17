@@ -45,6 +45,9 @@ export {
 export {
 	captureFromSource,
 	detectSourcePlatform,
+	type SourceAcquisitionArtifacts,
+	type SourceAcquisitionAttempt,
+	type SourceAcquisitionMethod,
 	type SourceAdapter,
 	type SourceCaptureDebug,
 	type SourceCaptureInput,

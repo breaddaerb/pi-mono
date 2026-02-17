@@ -28,6 +28,25 @@ export interface SourceCaptureDebug {
 	redirectChain: string[];
 }
 
+export type SourceAcquisitionMethod = "direct_fetch" | "reader_proxy" | "user_paste";
+
+export interface SourceAcquisitionArtifacts {
+	text?: string;
+	markdown?: string;
+	html?: string;
+}
+
+export interface SourceAcquisitionAttempt {
+	method: SourceAcquisitionMethod;
+	inputUrl: string;
+	effectiveUrl: string;
+	status: SourceStatus;
+	reasonCode: string | null;
+	reasonHint: string | null;
+	artifacts: SourceAcquisitionArtifacts;
+	debug: SourceCaptureDebug | null;
+}
+
 export interface SourceCaptureResult {
 	platform: SourcePlatform;
 	status: SourceStatus;
@@ -37,6 +56,8 @@ export interface SourceCaptureResult {
 	debug: SourceCaptureDebug | null;
 	usable: boolean;
 	snapshot: CaptureSnapshotResult;
+	acquisitionMethod: SourceAcquisitionMethod;
+	attempts: SourceAcquisitionAttempt[];
 }
 
 export interface SourceAdapter {

@@ -196,12 +196,13 @@ Main entry: `SonderApp.processCommand(...)` or Telegram URL-text extraction path
    - parse URL, tags, optional pasted evidence.
 
 2. **Source evaluation** (`src/sources/*`)
-   - classify platform/status (`ok`, `blocked`, `login_required`, etc.)
-   - choose direct snapshot path vs evidence-required path.
+   - classify platform/status (`ok`, `risk_control`, `login_required`, `unsupported`, etc.)
+   - run strategy planner (`direct_fetch` first; `reader_proxy` fallback when direct is non-OK)
 
 3. **Capture/evidence generation** (`src/snapshot/*`)
    - direct HTML capture: snapshot HTML + assets + extracted text
    - direct text-evidence capture: usable `text/plain`/markdown stored as extracted text
+   - `reader_proxy` fallback capture via `r.jina.ai/<url>` when direct fetch is non-OK
    - fallback/evidence mode: store pasted text as durable evidence artifacts
 
 4. **Persistence (transactional in app)**

@@ -9,6 +9,7 @@ export interface CaptureSnapshotOptions {
 	url: string;
 	dataRootDir: string;
 	fetchImpl?: typeof fetch;
+	skipLoginWallDetection?: boolean;
 }
 
 export type SnapshotFailureCode =
@@ -121,6 +122,7 @@ function isSupportedTextEvidenceContentType(contentType: string): boolean {
 
 export async function captureSnapshot(options: CaptureSnapshotOptions): Promise<CaptureSnapshotResult> {
 	const fetchImpl = options.fetchImpl ?? fetch;
+	const skipLoginWallDetection = options.skipLoginWallDetection ?? false;
 	const itemDirectory = getItemArtifactDirectory(options.dataRootDir, options.itemId);
 	mkdirSync(itemDirectory, { recursive: true });
 
@@ -147,7 +149,7 @@ export async function captureSnapshot(options: CaptureSnapshotOptions): Promise<
 			const html = await response.text();
 			const assetUrls = extractAssetUrls(html, options.url);
 			const extractedText = extractReadableTextFromHtml(html);
-			if (isLikelyLoginBlockedPage(options.url, html, extractedText)) {
+			if (!skipLoginWallDetection && isLikelyLoginBlockedPage(options.url, html, extractedText)) {
 				throw new Error("LOGIN_REQUIRED: source returned verification/login wall");
 			}
 
@@ -173,7 +175,7 @@ export async function captureSnapshot(options: CaptureSnapshotOptions): Promise<
 			if (extractedText.length === 0) {
 				throw new Error(`Unsupported content-type: ${contentType} (empty body)`);
 			}
-			if (hasLoginWallSignals(extractedText)) {
+			if (!skipLoginWallDetection && hasLoginWallSignals(extractedText)) {
 				throw new Error("LOGIN_REQUIRED: source returned verification/login wall");
 			}
 			writeFileSync(assetsManifestPath, JSON.stringify({ sourceUrl: options.url, assetUrls: [] }, null, 2), "utf8");

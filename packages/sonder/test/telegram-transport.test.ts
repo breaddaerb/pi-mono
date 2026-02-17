@@ -426,6 +426,7 @@ describe("TelegramBotRunner", () => {
 						url: "https://example.com/saved",
 						tags: ["saved"],
 						sourcePlatform: "web",
+						sourceAcquisitionMethod: "direct_fetch",
 						sourceStatus: "ok",
 						sourceStatusReason: null,
 						evidenceType: "snapshot",

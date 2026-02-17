@@ -16,7 +16,8 @@ export type ArtifactKind =
 	| "snapshot-assets"
 	| "extracted-text"
 	| "screenshot-fallback"
-	| "evidence-md";
+	| "evidence-md"
+	| "acquisition-report";
 
 export interface Artifact {
 	id: string;
