@@ -1236,6 +1236,136 @@ describe("TelegramBotRunner", () => {
 		app.close();
 	});
 
+	it("supports /save command suggestion flow with follow-up url message", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `Item answer: ${input.question}`,
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+			snapshotFetchImpl: async () =>
+				new Response("<html><body><p>Saved from suggestion flow.</p></body></html>", {
+					status: 200,
+					headers: { "content-type": "text/html; charset=utf-8" },
+				}),
+		});
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 83, text: "/save" },
+			{ updateId: 2, type: "message", chatId: 83, text: "https://example.com/suggested #tag" },
+			{ updateId: 3, type: "message", chatId: 83, text: "continue" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[0].text).toContain("Send save input in your next message");
+		expect(api.sent[1].text).toContain("Saved item");
+		expect(api.sent[2].text).toContain("Item mode opened");
+		expect(api.sent[3].text).toContain("Item answer: continue");
+		app.close();
+	});
+
+	it("uses pending /save input even when current item mode is active", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `Item(${input.itemId ?? "none"}): ${input.question}`,
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+			snapshotFetchImpl: async () =>
+				new Response("<html><body><p>Saved while active mode.</p></body></html>", {
+					status: 200,
+					headers: { "content-type": "text/html; charset=utf-8" },
+				}),
+		});
+
+		app.itemsRepo.create({
+			id: "item_prev",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com/prev",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_prev",
+			itemId: "item_prev",
+			kind: "extracted-text",
+			path: join(root, "missing-prev.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 85, text: "/open item_prev" },
+			{ updateId: 2, type: "message", chatId: 85, text: "/save" },
+			{ updateId: 3, type: "message", chatId: 85, text: "https://example.com/new-item" },
+			{ updateId: 4, type: "message", chatId: 85, text: "continue" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[0].text).toContain("Item mode opened");
+		expect(api.sent[1].text).toContain("Send save input in your next message");
+		expect(api.sent[2].text).toContain("Saved item");
+		expect(api.sent[3].text).toContain("Item mode opened for saved item");
+
+		const savedItemIdLine = api.sent[2].text.split("\n").find((line) => line.startsWith("ID: "));
+		if (!savedItemIdLine) {
+			throw new Error("Expected saved item id line in save response");
+		}
+		const savedItemId = savedItemIdLine.slice(4).trim();
+		expect(savedItemId).not.toBe("item_prev");
+		expect(api.sent[4].text).toContain(`🧠 In: ${savedItemId}`);
+		expect(api.sent[4].text).toContain(`Item(${savedItemId}): continue`);
+		app.close();
+	});
+
+	it("supports /save command suggestion flow when command includes bot mention", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "stub",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+			snapshotFetchImpl: async () =>
+				new Response("<html><body><p>Saved from mention flow.</p></body></html>", {
+					status: 200,
+					headers: { "content-type": "text/html; charset=utf-8" },
+				}),
+		});
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 84, text: "/save@sonder_bot" },
+			{ updateId: 2, type: "message", chatId: 84, text: "https://example.com/from-mention" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[0].text).toContain("Send save input in your next message");
+		expect(api.sent[1].text).toContain("Saved item");
+		expect(api.sent[2].text).toContain("Item mode opened");
+		app.close();
+	});
+
 	it("returns /ask deprecation guidance in telegram mode", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);

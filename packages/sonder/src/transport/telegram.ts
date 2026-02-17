@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Writable } from "node:stream";
 import { type Dispatcher, ProxyAgent, fetch as undiciFetch } from "undici";
-import type { SonderApp } from "../app/index.js";
+import type { SonderApp, SonderCommandResult } from "../app/index.js";
 import type { ParsedTelegramModeCommand } from "../commands/parse-mode-command.js";
 import { parseTelegramModeCommand } from "../commands/parse-mode-command.js";
 import { buildCallbackPayload, type CallbackAction, parseCallbackPayload } from "./telegram-callback.js";
@@ -310,6 +310,8 @@ interface HistoryMenuState {
 	expiresAtMs: number;
 }
 
+type SaveCommandResult = Extract<SonderCommandResult, { type: "save" }>;
+
 export class TelegramBotRunner {
 	private offset = 0;
 	private readonly longPollSeconds: number;
@@ -322,6 +324,7 @@ export class TelegramBotRunner {
 	private readonly sessionMenus = new Map<number, Map<string, SessionMenuState>>();
 	private readonly modelMenus = new Map<number, Map<string, ModelMenuState>>();
 	private readonly historyMenus = new Map<number, Map<string, HistoryMenuState>>();
+	private readonly pendingSaveChats = new Set<number>();
 
 	constructor(
 		private readonly api: TelegramApi,
@@ -369,6 +372,40 @@ export class TelegramBotRunner {
 
 	private clearChatMode(chatId: number): boolean {
 		return this.chatModeStore.clear(chatId);
+	}
+
+	private markSaveInputPending(chatId: number): void {
+		this.pendingSaveChats.add(chatId);
+	}
+
+	private clearPendingSaveInput(chatId: number): void {
+		this.pendingSaveChats.delete(chatId);
+	}
+
+	private hasPendingSaveInput(chatId: number): boolean {
+		return this.pendingSaveChats.has(chatId);
+	}
+
+	private async sendSaveResultAndMaybeOpenItemMode(chatId: number, saveResult: SaveCommandResult): Promise<void> {
+		const responseText = formatCommandResult({ ok: true, value: saveResult });
+		await this.api.sendMessage(chatId, responseText);
+		if (saveResult.needsUserEvidence) {
+			return;
+		}
+		const opened = this.app.openItemDialogue(saveResult.itemId);
+		this.setChatMode(chatId, {
+			mode: "item",
+			itemId: opened.itemId,
+			sessionId: opened.sessionId,
+		});
+		await this.sendItemModeOpenedMessage(
+			chatId,
+			saveResult.evidenceType === "pasted_text"
+				? "🧠 Item mode opened with pasted-text evidence."
+				: "🧠 Item mode opened for saved item.",
+			opened.itemId,
+			opened.sessionId,
+		);
 	}
 
 	private createItemMenu(chatId: number, kind: MenuKind, entries: ItemMenuEntry[], query: string | null): string {
@@ -1258,13 +1295,31 @@ export class TelegramBotRunner {
 
 	private async handleMessage(chatId: number, text: string): Promise<void> {
 		try {
-			const modeCommand = parseTelegramModeCommand(text);
+			const normalizedInput = stripTelegramCommandMention(text);
+			const modeCommand = parseTelegramModeCommand(normalizedInput);
 			if (modeCommand) {
+				this.clearPendingSaveInput(chatId);
 				await this.handleModeCommand(chatId, modeCommand);
 				return;
 			}
 
-			if (!text.startsWith("/")) {
+			if (!normalizedInput.startsWith("/")) {
+				if (this.hasPendingSaveInput(chatId)) {
+					const saveCommandResult = await this.app.processCommand(`/save ${normalizedInput}`);
+					if (!saveCommandResult.ok || saveCommandResult.value.type !== "save") {
+						const responseText = formatCommandResult(saveCommandResult);
+						await this.api.sendMessage(chatId, responseText);
+						await this.api.sendMessage(
+							chatId,
+							"Still waiting for save input. Send: <url> [#tags...] [pasted evidence text], or run /exit to cancel.",
+						);
+						return;
+					}
+					this.clearPendingSaveInput(chatId);
+					await this.sendSaveResultAndMaybeOpenItemMode(chatId, saveCommandResult.value);
+					return;
+				}
+
 				const activeMode = this.getChatMode(chatId);
 				if (!activeMode) {
 					const urlInput = extractUrlAndPastedText(text);
@@ -1274,24 +1329,7 @@ export class TelegramBotRunner {
 							tags: [],
 							pastedText: urlInput.pastedText,
 						});
-						const formattedSave = formatCommandResult({ ok: true, value: saveResult });
-						await this.api.sendMessage(chatId, formattedSave);
-						if (!saveResult.needsUserEvidence) {
-							const opened = this.app.openItemDialogue(saveResult.itemId);
-							this.setChatMode(chatId, {
-								mode: "item",
-								itemId: opened.itemId,
-								sessionId: opened.sessionId,
-							});
-							await this.sendItemModeOpenedMessage(
-								chatId,
-								saveResult.evidenceType === "pasted_text"
-									? "🧠 Item mode opened with pasted-text evidence."
-									: "🧠 Item mode opened for saved item.",
-								opened.itemId,
-								opened.sessionId,
-							);
-						}
+						await this.sendSaveResultAndMaybeOpenItemMode(chatId, saveResult);
 						return;
 					}
 					await this.api.sendMessage(
@@ -1301,6 +1339,7 @@ export class TelegramBotRunner {
 					return;
 				}
 
+				this.clearPendingSaveInput(chatId);
 				if (activeMode.mode === "item") {
 					const askResult = await this.app.askInItemDialogue(activeMode.itemId, activeMode.sessionId, text);
 					const formatted = this.formatContextualAnswer(chatId, askResult.answer, askResult.itemId);
@@ -1321,7 +1360,8 @@ export class TelegramBotRunner {
 				return;
 			}
 
-			if (text.startsWith("/ask")) {
+			if (normalizedInput.startsWith("/ask")) {
+				this.clearPendingSaveInput(chatId);
 				await this.api.sendMessage(
 					chatId,
 					"In Telegram, /ask is deprecated. Use /find or /list, tap Open, then ask in plain text.",
@@ -1329,29 +1369,21 @@ export class TelegramBotRunner {
 				return;
 			}
 
-			const normalized = text.trim();
-			const commandText = normalized === "/find" ? "/list" : text;
+			const normalized = normalizedInput.trim();
+			if (normalized === "/save") {
+				this.markSaveInputPending(chatId);
+				await this.api.sendMessage(
+					chatId,
+					"Send save input in your next message: <url> [#tags...] [pasted evidence text].\nExample: https://example.com/article #ml This argues that test-time scaling...",
+				);
+				return;
+			}
+
+			this.clearPendingSaveInput(chatId);
+			const commandText = normalized === "/find" ? "/list" : normalizedInput;
 			const result = await this.app.processCommand(commandText);
 			if (result.ok && result.value.type === "save") {
-				const responseText = formatCommandResult(result);
-				await this.api.sendMessage(chatId, responseText);
-				if (result.value.needsUserEvidence) {
-					return;
-				}
-				const opened = this.app.openItemDialogue(result.value.itemId);
-				this.setChatMode(chatId, {
-					mode: "item",
-					itemId: opened.itemId,
-					sessionId: opened.sessionId,
-				});
-				await this.sendItemModeOpenedMessage(
-					chatId,
-					result.value.evidenceType === "pasted_text"
-						? "🧠 Item mode opened with pasted-text evidence."
-						: "🧠 Item mode opened for saved item.",
-					opened.itemId,
-					opened.sessionId,
-				);
+				await this.sendSaveResultAndMaybeOpenItemMode(chatId, result.value);
 				return;
 			}
 			if (
@@ -1554,6 +1586,22 @@ export class TelegramBotRunner {
 		});
 		await this.sendItemModeOpenedMessage(chatId, "🧠 Item dialogue resumed.", resumed.itemId, resumed.sessionId);
 	}
+}
+
+function stripTelegramCommandMention(text: string): string {
+	const trimmed = text.trim();
+	if (!trimmed.startsWith("/")) {
+		return text;
+	}
+	const firstSpace = trimmed.indexOf(" ");
+	const commandToken = firstSpace === -1 ? trimmed : trimmed.slice(0, firstSpace);
+	const rest = firstSpace === -1 ? "" : trimmed.slice(firstSpace);
+	const mentionIndex = commandToken.indexOf("@");
+	if (mentionIndex === -1) {
+		return trimmed;
+	}
+	const commandWithoutMention = commandToken.slice(0, mentionIndex);
+	return `${commandWithoutMention}${rest}`;
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {

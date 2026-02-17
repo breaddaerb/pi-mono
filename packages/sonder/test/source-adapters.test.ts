@@ -32,6 +32,82 @@ describe("source adapters", () => {
 		expect(result.usable).toBe(false);
 	});
 
+	it("falls back to reader proxy when twitter direct fetch is low-signal", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-source-"));
+		tempDirs.push(root);
+
+		const result = await captureFromSource({
+			itemId: "item_twitter_low_signal",
+			url: "https://x.com/example/status/123",
+			dataRootDir: root,
+			fetchImpl: async (input) => {
+				const requestUrl = String(input);
+				if (requestUrl.startsWith("https://r.jina.ai/")) {
+					return new Response(
+						"Title: Example post\n\nMarkdown Content:\nThis is the useful post content recovered from reader proxy. It includes concrete claims and enough detail for retrieval and dialogue grounding.",
+						{
+							status: 200,
+							headers: { "content-type": "text/plain; charset=utf-8" },
+						},
+					);
+				}
+				return new Response(
+					"<html><body>X. it's what's happening. Join X today. Terms of Service Privacy Policy Cookie Policy Ads info Trending Grok.</body></html>",
+					{
+						status: 200,
+						headers: { "content-type": "text/html; charset=utf-8" },
+					},
+				);
+			},
+		});
+		expect(result.platform).toBe("twitter");
+		expect(result.status).toBe("ok");
+		expect(result.usable).toBe(true);
+		expect(result.acquisitionMethod).toBe("reader_proxy");
+		expect(result.attempts).toHaveLength(2);
+		expect(result.attempts[0]?.status).toBe("unsupported");
+		expect(result.attempts[0]?.reasonCode).toBe("TWITTER_LOW_SIGNAL_CONTENT");
+		expect(result.attempts[1]?.method).toBe("reader_proxy");
+	});
+
+	it("falls back to reader proxy when twitter direct fetch returns error page", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-source-"));
+		tempDirs.push(root);
+
+		const result = await captureFromSource({
+			itemId: "item_twitter_error_page",
+			url: "https://x.com/example/status/456",
+			dataRootDir: root,
+			fetchImpl: async (input) => {
+				const requestUrl = String(input);
+				if (requestUrl.startsWith("https://r.jina.ai/")) {
+					return new Response(
+						"Title: Recovered post\n\nMarkdown Content:\nRecovered content from reader proxy with enough context for use.",
+						{
+							status: 200,
+							headers: { "content-type": "text/plain; charset=utf-8" },
+						},
+					);
+				}
+				return new Response(
+					"Something went wrong, but don’t fret — let’s give it another shot. Try again. Some privacy related extensions may cause issues on x.com.",
+					{
+						status: 200,
+						headers: { "content-type": "text/plain; charset=utf-8" },
+					},
+				);
+			},
+		});
+		expect(result.platform).toBe("twitter");
+		expect(result.status).toBe("ok");
+		expect(result.usable).toBe(true);
+		expect(result.acquisitionMethod).toBe("reader_proxy");
+		expect(result.attempts).toHaveLength(2);
+		expect(result.attempts[0]?.status).toBe("unsupported");
+		expect(result.attempts[0]?.reasonCode).toBe("TWITTER_ERROR_PAGE");
+		expect(result.attempts[1]?.method).toBe("reader_proxy");
+	});
+
 	it("treats r.jina.ai wrapped twitter plain text as usable text evidence", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-source-"));
 		tempDirs.push(root);

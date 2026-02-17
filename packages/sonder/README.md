@@ -29,7 +29,7 @@ Telegram-first conversational PKM for item-anchored thinking.
 | Generic web | Medium | `ok` / `blocked` | Varies by site structure and anti-bot policy |
 | Xiaohongshu | Medium | `ok` / `login_required` / `blocked` | Uses retrieval-time boilerplate cleanup (incl. common filing/license noise); when blocked but extractable, Sonder may auto-derive cleaned evidence via pasted-evidence path |
 | WeChat article | Low-Medium | `risk_control` / `login_required` (common) | Verification walls are common; Sonder uses browser-like request fingerprints + redirect tracing, but risk-control pages still occur; prefer pasted evidence when blocked |
-| X/Twitter | Low-Medium | `login_required` / `error` (common) | Login-gated pages are common; pasted evidence path is supported. Text-bridge URLs returning `text/plain` (e.g. `r.jina.ai/...`) are accepted as direct text evidence when content is usable. |
+| X/Twitter | Low-Medium | `login_required` / `unsupported` / `error` (common) | Login-gated pages are common; low-signal direct captures are treated as unusable and trigger `reader_proxy` fallback. Pasted evidence path is supported. Text-bridge URLs returning `text/plain` (e.g. `r.jina.ai/...`) are accepted as direct text evidence when content is usable. |
 
 When status indicates the link is not usable, Sonder asks for pasted evidence unless it can auto-derive usable cleaned evidence (currently for some Xiaohongshu pages).
 
@@ -103,6 +103,8 @@ SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890"
 /models
 /exit
 ```
+
+Tip: if Telegram sends `/save` immediately from command suggestions, Sonder will keep a pending save input state and prompt for the next message. Send the URL (and optional tags/text) in that next message.
 
 ### Compatibility commands
 
