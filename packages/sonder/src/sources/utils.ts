@@ -59,9 +59,40 @@ export function mapFailureCodeToSourceStatus(code: SnapshotFailureCode): SourceS
 		return "timeout";
 	}
 	if (code === "unsupported_content_type") {
-		return "blocked";
+		return "unsupported";
 	}
-	return "fetch_failed";
+	if (code === "fetch_failed") {
+		return "error";
+	}
+	return "error";
+}
+
+export function mapSnapshotFailureToReasonCode(code: SnapshotFailureCode, reason: string | null): string | null {
+	if (code === "none") {
+		return null;
+	}
+	if (code === "login_required") {
+		return "LOGIN_REQUIRED";
+	}
+	if (code === "blocked") {
+		return "REQUEST_BLOCKED";
+	}
+	if (code === "timeout") {
+		return "REQUEST_TIMEOUT";
+	}
+	if (code === "unsupported_content_type") {
+		return "UNSUPPORTED_CONTENT_TYPE";
+	}
+	if (reason) {
+		const normalized = reason.toLowerCase();
+		if (normalized.includes("http 404")) {
+			return "HTTP_404";
+		}
+		if (normalized.includes("http 403")) {
+			return "HTTP_403";
+		}
+	}
+	return "REQUEST_ERROR";
 }
 
 export function looksLikeLoginWall(text: string): boolean {

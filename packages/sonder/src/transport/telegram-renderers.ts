@@ -2,6 +2,16 @@ import type { SonderApp } from "../app/index.js";
 
 const MAX_TELEGRAM_MESSAGE_LENGTH = 3500;
 
+function buildSourceFallbackHint(status: string): string {
+	if (status === "risk_control") {
+		return "\nLink usability: WeChat verification/risk control was triggered. Options: retry later, or re-send with pasted text: /save <url> <pasted text>";
+	}
+	if (status === "login_required") {
+		return "\nLink usability: source requires login/client context. Re-send with pasted text: /save <url> <pasted text>";
+	}
+	return "\nLink usability: not usable for reliable evidence. Re-send with pasted text: /save <url> <pasted text>";
+}
+
 export function formatPollingError(error: unknown): string {
 	if (!(error instanceof Error)) {
 		return String(error);
@@ -66,9 +76,7 @@ export function formatCommandResult(result: Awaited<ReturnType<SonderApp["proces
 		const reason = result.value.sourceStatusReason
 			? `\nReason: ${truncateMiddle(result.value.sourceStatusReason, 180)}`
 			: "";
-		const needsEvidence = result.value.needsUserEvidence
-			? "\nLink usability: not usable for reliable evidence. Re-send with pasted text: /save <url> <pasted text>"
-			: "";
+		const needsEvidence = result.value.needsUserEvidence ? buildSourceFallbackHint(result.value.sourceStatus) : "";
 		return (
 			[
 				"Saved item",

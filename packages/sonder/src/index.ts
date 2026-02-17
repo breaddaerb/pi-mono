@@ -32,6 +32,7 @@ export {
 	type CodexResponderOptions,
 	createCodexResponder,
 	createStubResponder,
+	DEFAULT_MAX_EXTRACTED_TEXT_CHARACTERS,
 	renderAskPrompt,
 } from "./runtime/index.js";
 export {
@@ -45,6 +46,7 @@ export {
 	captureFromSource,
 	detectSourcePlatform,
 	type SourceAdapter,
+	type SourceCaptureDebug,
 	type SourceCaptureInput,
 	type SourceCaptureResult,
 	type SourcePlatform,

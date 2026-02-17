@@ -5,6 +5,7 @@ import {
 	cleanXiaohongshuExtractedText,
 	looksMostlyBoilerplateForXiaohongshu,
 	mapFailureCodeToSourceStatus,
+	mapSnapshotFailureToReasonCode,
 } from "./utils.js";
 
 export class XiaohongshuSourceAdapter implements SourceAdapter {
@@ -21,6 +22,9 @@ export class XiaohongshuSourceAdapter implements SourceAdapter {
 				platform: "xiaohongshu",
 				status,
 				reason: snapshot.failureReason,
+				reasonCode: mapSnapshotFailureToReasonCode(snapshot.failureCode, snapshot.failureReason),
+				reasonHint: snapshot.failureReason,
+				debug: null,
 				usable: false,
 				snapshot,
 			};
@@ -31,8 +35,11 @@ export class XiaohongshuSourceAdapter implements SourceAdapter {
 		if (looksMostlyBoilerplateForXiaohongshu(extracted, cleaned)) {
 			return {
 				platform: "xiaohongshu",
-				status: "blocked",
+				status: "unsupported",
 				reason: "Xiaohongshu page appears mostly boilerplate and is not reliable evidence.",
+				reasonCode: "XHS_BOILERPLATE_ONLY",
+				reasonHint: "Xiaohongshu page appears mostly boilerplate and is not reliable evidence.",
+				debug: null,
 				usable: false,
 				snapshot,
 			};
@@ -42,6 +49,9 @@ export class XiaohongshuSourceAdapter implements SourceAdapter {
 			platform: "xiaohongshu",
 			status: "ok",
 			reason: null,
+			reasonCode: null,
+			reasonHint: null,
+			debug: null,
 			usable: true,
 			snapshot,
 		};

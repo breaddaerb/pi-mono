@@ -105,6 +105,62 @@ describe("AskService", () => {
 		database.close();
 	});
 
+	it("caps extracted text context at 50,000 characters by default", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-ask-"));
+		tempDirs.push(root);
+
+		const extractedPath = join(root, "data", "items", "item_long", "extracted.txt");
+		mkdirSync(dirname(extractedPath), { recursive: true });
+		writeFileSync(extractedPath, "A".repeat(60_000), "utf8");
+
+		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
+		const itemsRepo = new ItemsRepo(database);
+		const artifactsRepo = new ArtifactsRepo(database);
+		const annotationsRepo = new AnnotationsRepo(database);
+		const dialogueRepo = new DialogueRepo(database);
+
+		itemsRepo.create({
+			id: "item_long",
+			createdAt: "2026-02-14T03:00:00.000Z",
+			sourceType: "web",
+			originalUrl: "https://example.com/long",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		artifactsRepo.create({
+			id: "art_extracted_long",
+			itemId: "item_long",
+			kind: "extracted-text",
+			path: extractedPath,
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: "2026-02-14T03:00:01.000Z",
+		});
+
+		let extractedLength = 0;
+		const askService = new AskService({
+			itemsRepo,
+			artifactsRepo,
+			annotationsRepo,
+			dialogueRepo,
+			responder: async (input) => {
+				extractedLength = input.context.extractedText.length;
+				return {
+					answer: "ok",
+					model: "gpt-5",
+					provider: "openai-codex",
+					citations: [],
+				};
+			},
+		});
+
+		await askService.ask("item_long", "Q?");
+		expect(extractedLength).toBe(50_000);
+		database.close();
+	});
+
 	it("rejects empty model answers", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-ask-"));
 		tempDirs.push(root);

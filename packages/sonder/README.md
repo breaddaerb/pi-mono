@@ -28,8 +28,8 @@ Telegram-first conversational PKM for item-anchored thinking.
 | arXiv | High | `ok` | HTML pages usually capture cleanly |
 | Generic web | Medium | `ok` / `blocked` | Varies by site structure and anti-bot policy |
 | Xiaohongshu | Medium | `ok` / `login_required` / `blocked` | Uses retrieval-time boilerplate cleanup (incl. common filing/license noise); when blocked but extractable, Sonder may auto-derive cleaned evidence via pasted-evidence path |
-| WeChat article | Low-Medium | `login_required` (common) | Verification walls are common; prefer pasted evidence when blocked |
-| X/Twitter | Low-Medium | `login_required` / `fetch_failed` (common) | Login-gated pages are common; pasted evidence path is supported. Text-bridge URLs returning `text/plain` (e.g. `r.jina.ai/...`) are accepted as direct text evidence when content is usable. |
+| WeChat article | Low-Medium | `risk_control` / `login_required` (common) | Verification walls are common; Sonder uses browser-like request fingerprints + redirect tracing, but risk-control pages still occur; prefer pasted evidence when blocked |
+| X/Twitter | Low-Medium | `login_required` / `error` (common) | Login-gated pages are common; pasted evidence path is supported. Text-bridge URLs returning `text/plain` (e.g. `r.jina.ai/...`) are accepted as direct text evidence when content is usable. |
 
 When status indicates the link is not usable, Sonder asks for pasted evidence unless it can auto-derive usable cleaned evidence (currently for some Xiaohongshu pages).
 
@@ -154,6 +154,13 @@ Behavior:
 - item dialogue turns are persisted separately in `dialogue_turns` and are not capped by these general-mode limits
 
 In item mode, action panel supports: `Open Viewer | Delete Item | Exit`.
+
+### Context budget defaults (item dialogue)
+
+- Extracted-text context included in ask prompts is bounded by:
+  - `DEFAULT_MAX_EXTRACTED_TEXT_CHARACTERS = 50_000`
+- This is configurable at runtime in code via `AskServiceOptions.maxExtractedTextCharacters`
+  (or direct `buildAskContext(..., maxExtractedTextCharacters)` usage).
 
 ### G) Viewer loop
 

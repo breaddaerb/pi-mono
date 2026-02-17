@@ -825,6 +825,14 @@ function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
 .sonder-overlay-highlight { background: #ffe58f; }
 .sonder-overlay-underline { text-decoration: underline; text-decoration-color: #ff4d4f; text-decoration-thickness: 2px; }
 .sonder-overlay-focus { outline: 2px solid #1677ff; outline-offset: 2px; }
+/* WeChat article body often ships hidden and is unhidden by inline scripts.
+   Viewer removes scripts, so force content visible for static reading/annotation. */
+#js_content,
+.rich_media_content#js_content,
+.rich_media_content.js_underline_content {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
 </style>
 <script id="sonder-overlay-script">
 (function() {

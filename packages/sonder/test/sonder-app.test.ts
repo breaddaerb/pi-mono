@@ -515,7 +515,7 @@ describe("SonderApp", () => {
 			});
 			expect(saveResult.evidenceType).toBe("pasted_text");
 			expect(saveResult.sourcePlatform).toBe("twitter");
-			expect(saveResult.sourceStatus).toBe("fetch_failed");
+			expect(saveResult.sourceStatus).toBe("error");
 			expect(saveResult.sourceStatusReason).toContain("fetch failed");
 			expect(saveResult.needsUserEvidence).toBe(false);
 
@@ -557,7 +557,7 @@ describe("SonderApp", () => {
 				url: "https://www.xiaohongshu.com/discovery/item/test-auto-evidence",
 			});
 			expect(saveResult.sourcePlatform).toBe("xiaohongshu");
-			expect(saveResult.sourceStatus).toBe("blocked");
+			expect(saveResult.sourceStatus).toBe("unsupported");
 			expect(saveResult.evidenceType).toBe("pasted_text");
 			expect(saveResult.needsUserEvidence).toBe(false);
 

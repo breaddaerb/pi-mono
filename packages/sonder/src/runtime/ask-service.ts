@@ -31,6 +31,7 @@ export interface AskServiceDependencies {
 export interface AskServiceOptions {
 	persistThinking?: boolean;
 	now?: () => Date;
+	maxExtractedTextCharacters?: number;
 }
 
 export interface AskResult {
@@ -49,6 +50,7 @@ export interface EnsureSessionResult {
 export class AskService {
 	private readonly persistThinking: boolean;
 	private readonly now: () => Date;
+	private readonly maxExtractedTextCharacters: number | undefined;
 
 	constructor(
 		private readonly dependencies: AskServiceDependencies,
@@ -56,6 +58,9 @@ export class AskService {
 	) {
 		this.persistThinking = options.persistThinking ?? false;
 		this.now = options.now ?? (() => new Date());
+		if (options.maxExtractedTextCharacters !== undefined) {
+			this.maxExtractedTextCharacters = Math.max(1, Math.floor(options.maxExtractedTextCharacters));
+		}
 	}
 
 	async ask(itemId: string, question: string): Promise<AskResult> {
@@ -79,6 +84,7 @@ export class AskService {
 			annotations,
 			dialogueTurns: priorTurns,
 			extractedTextPath: extractedTextArtifact?.path ?? null,
+			maxExtractedTextCharacters: this.maxExtractedTextCharacters,
 		});
 		const prompt = renderAskPrompt(question, context);
 

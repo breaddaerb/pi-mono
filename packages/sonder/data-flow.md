@@ -211,6 +211,7 @@ Main entry: `SonderApp.processCommand(...)` or Telegram URL-text extraction path
 
 5. **Return command result**
    - includes source diagnostics and whether user evidence is still needed
+   - WeChat risk-control/captcha walls are surfaced as `risk_control` (separate from `login_required`)
    - Telegram transport may auto-open item mode when save produced usable evidence
 
 ## 5) Discovery flow (`/list`, `/find`)

@@ -17,6 +17,8 @@ export interface AskContext {
 	extractedText: string;
 }
 
+export const DEFAULT_MAX_EXTRACTED_TEXT_CHARACTERS = 50_000;
+
 function readExtractedText(item: Item, path: string | null, maxCharacters: number): string {
 	if (!path) {
 		return "";
@@ -35,7 +37,7 @@ function readExtractedText(item: Item, path: string | null, maxCharacters: numbe
 }
 
 export function buildAskContext(input: AskContextInput): AskContext {
-	const maxCharacters = input.maxExtractedTextCharacters ?? 8_000;
+	const maxCharacters = input.maxExtractedTextCharacters ?? DEFAULT_MAX_EXTRACTED_TEXT_CHARACTERS;
 	return {
 		item: input.item,
 		annotationEvidence: input.annotations,

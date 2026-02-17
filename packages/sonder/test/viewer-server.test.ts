@@ -245,6 +245,8 @@ describe("viewer server", () => {
 			expect(snapshotHtml).toContain("sonder-overlay-script");
 			expect(snapshotHtml).toContain("findRangeAcrossTextNodes");
 			expect(snapshotHtml).toContain("Main claim lives here.");
+			expect(snapshotHtml).toContain("#js_content");
+			expect(snapshotHtml).toContain("visibility: visible !important");
 			expect(snapshotHtml).not.toContain("document.body.innerHTML='blanked'");
 			expect(snapshotHtml).not.toContain("<iframe");
 			expect(snapshotHtml).not.toContain('http-equiv="refresh"');

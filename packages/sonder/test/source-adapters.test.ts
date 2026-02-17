@@ -54,7 +54,7 @@ describe("source adapters", () => {
 		expect(extracted).toContain("training environment");
 	});
 
-	it("classifies wechat verification page as unusable", async () => {
+	it("classifies wechat verification page as risk_control", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-source-"));
 		tempDirs.push(root);
 
@@ -69,7 +69,8 @@ describe("source adapters", () => {
 				}),
 		});
 		expect(result.platform).toBe("wechat");
-		expect(result.status).toBe("login_required");
+		expect(result.status).toBe("risk_control");
+		expect(result.reasonCode).toBe("WECHAT_CAPTCHA");
 		expect(result.usable).toBe(false);
 	});
 
@@ -120,7 +121,8 @@ describe("source adapters", () => {
 				),
 		});
 		expect(result.platform).toBe("xiaohongshu");
-		expect(result.status).toBe("blocked");
+		expect(result.status).toBe("unsupported");
+		expect(result.reasonCode).toBe("XHS_BOILERPLATE_ONLY");
 		expect(result.usable).toBe(false);
 	});
 

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { captureSnapshot } from "../snapshot/snapshot-service.js";
 import type { SourceAdapter, SourceCaptureInput, SourceCaptureResult } from "./types.js";
-import { looksLikeLoginWall, mapFailureCodeToSourceStatus } from "./utils.js";
+import { looksLikeLoginWall, mapFailureCodeToSourceStatus, mapSnapshotFailureToReasonCode } from "./utils.js";
 
 function looksLikeTwitterGate(text: string): boolean {
 	const normalized = text.toLowerCase();
@@ -29,6 +29,9 @@ export class TwitterSourceAdapter implements SourceAdapter {
 				platform: "twitter",
 				status,
 				reason: snapshot.failureReason,
+				reasonCode: mapSnapshotFailureToReasonCode(snapshot.failureCode, snapshot.failureReason),
+				reasonHint: snapshot.failureReason,
+				debug: null,
 				usable: false,
 				snapshot,
 			};
@@ -40,6 +43,9 @@ export class TwitterSourceAdapter implements SourceAdapter {
 				platform: "twitter",
 				status: "login_required",
 				reason: "Twitter/X returned login-gated or unusable page content.",
+				reasonCode: "TWITTER_LOGIN_WALL",
+				reasonHint: "Twitter/X returned login-gated or unusable page content.",
+				debug: null,
 				usable: false,
 				snapshot,
 			};
@@ -49,6 +55,9 @@ export class TwitterSourceAdapter implements SourceAdapter {
 			platform: "twitter",
 			status: "ok",
 			reason: null,
+			reasonCode: null,
+			reasonHint: null,
+			debug: null,
 			usable: true,
 			snapshot,
 		};

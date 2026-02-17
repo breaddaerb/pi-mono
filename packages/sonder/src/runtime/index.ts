@@ -7,7 +7,13 @@ export {
 	type AskServiceDependencies,
 	type AskServiceOptions,
 } from "./ask-service.js";
-export { type AskContext, type AskContextInput, buildAskContext, renderAskPrompt } from "./context-builder.js";
+export {
+	type AskContext,
+	type AskContextInput,
+	buildAskContext,
+	DEFAULT_MAX_EXTRACTED_TEXT_CHARACTERS,
+	renderAskPrompt,
+} from "./context-builder.js";
 export {
 	type CodexModelOption,
 	type CodexModelSelector,

@@ -1,6 +1,6 @@
 import { captureSnapshot } from "../snapshot/snapshot-service.js";
 import type { SourceAdapter, SourceCaptureInput, SourceCaptureResult, SourcePlatform } from "./types.js";
-import { mapFailureCodeToSourceStatus } from "./utils.js";
+import { mapFailureCodeToSourceStatus, mapSnapshotFailureToReasonCode } from "./utils.js";
 
 export class GenericSourceAdapter implements SourceAdapter {
 	constructor(private readonly platform: SourcePlatform) {}
@@ -13,10 +13,14 @@ export class GenericSourceAdapter implements SourceAdapter {
 			fetchImpl: input.fetchImpl,
 		});
 		const status = mapFailureCodeToSourceStatus(snapshot.failureCode);
+		const reasonCode = mapSnapshotFailureToReasonCode(snapshot.failureCode, snapshot.failureReason);
 		return {
 			platform: this.platform,
 			status,
 			reason: snapshot.failureReason,
+			reasonCode,
+			reasonHint: snapshot.failureReason,
+			debug: null,
 			usable: status === "ok",
 			snapshot,
 		};

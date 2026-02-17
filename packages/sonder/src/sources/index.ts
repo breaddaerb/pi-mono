@@ -24,5 +24,12 @@ export async function captureFromSource(input: SourceCaptureInput): Promise<Sour
 	return adapter.capture(input);
 }
 
-export type { SourceAdapter, SourceCaptureInput, SourceCaptureResult, SourcePlatform, SourceStatus } from "./types.js";
+export type {
+	SourceAdapter,
+	SourceCaptureDebug,
+	SourceCaptureInput,
+	SourceCaptureResult,
+	SourcePlatform,
+	SourceStatus,
+} from "./types.js";
 export { detectSourcePlatform } from "./utils.js";
