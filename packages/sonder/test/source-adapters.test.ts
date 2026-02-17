@@ -32,6 +32,28 @@ describe("source adapters", () => {
 		expect(result.usable).toBe(false);
 	});
 
+	it("treats r.jina.ai wrapped twitter plain text as usable text evidence", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-source-"));
+		tempDirs.push(root);
+
+		const result = await captureFromSource({
+			itemId: "item_twitter_wrapped",
+			url: "https://r.jina.ai/https://x.com/karpathy/status/2023476423055601903?s=20",
+			dataRootDir: root,
+			fetchImpl: async () =>
+				new Response("@karpathy: the training environment is the benchmark itself.", {
+					status: 200,
+					headers: { "content-type": "text/plain; charset=utf-8" },
+				}),
+		});
+		expect(result.platform).toBe("twitter");
+		expect(result.status).toBe("ok");
+		expect(result.usable).toBe(true);
+
+		const extracted = readFileSync(result.snapshot.extractedTextPath, "utf8");
+		expect(extracted).toContain("training environment");
+	});
+
 	it("classifies wechat verification page as unusable", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-source-"));
 		tempDirs.push(root);

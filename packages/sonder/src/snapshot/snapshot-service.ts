@@ -72,24 +72,29 @@ function classifyFailureCode(reason: string): SnapshotFailureCode {
 	return "fetch_failed";
 }
 
-function isLikelyLoginBlockedPage(url: string, html: string, extractedText: string): boolean {
-	const lowerUrl = url.toLowerCase();
-	const lowerHtml = html.toLowerCase();
-	const lowerExtracted = extractedText.toLowerCase();
-	const haystack = `${lowerHtml}\n${lowerExtracted}`;
+function hasLoginWallSignals(text: string): boolean {
+	const normalized = text.toLowerCase();
 	const signals = [
 		"human verification",
 		"captcha",
 		"please log in",
 		"please login",
 		"sign in",
+		"log in to x",
+		"join x",
 		"环境异常",
 		"去验证",
 		"验证后即可继续访问",
 		"请登录",
+		"登录",
 	];
-	const hasSignal = signals.some((signal) => haystack.includes(signal));
-	if (!hasSignal) {
+	return signals.some((signal) => normalized.includes(signal));
+}
+
+function isLikelyLoginBlockedPage(url: string, html: string, extractedText: string): boolean {
+	const lowerUrl = url.toLowerCase();
+	const haystack = `${html}\n${extractedText}`;
+	if (!hasLoginWallSignals(haystack)) {
 		return false;
 	}
 	if (lowerUrl.includes("mp.weixin.qq.com")) {
@@ -102,6 +107,16 @@ function isLikelyLoginBlockedPage(url: string, html: string, extractedText: stri
 		return true;
 	}
 	return true;
+}
+
+function isSupportedTextEvidenceContentType(contentType: string): boolean {
+	const normalized = contentType.toLowerCase();
+	return (
+		normalized.includes("text/plain") ||
+		normalized.includes("text/markdown") ||
+		normalized.includes("text/x-markdown") ||
+		normalized.includes("application/markdown")
+	);
 }
 
 export async function captureSnapshot(options: CaptureSnapshotOptions): Promise<CaptureSnapshotResult> {
@@ -127,32 +142,57 @@ export async function captureSnapshot(options: CaptureSnapshotOptions): Promise<
 			throw new Error(`HTTP ${response.status}`);
 		}
 		const contentType = response.headers.get("content-type") ?? "";
-		if (!contentType.toLowerCase().includes("text/html")) {
-			throw new Error(`Unsupported content-type: ${contentType}`);
+		const normalizedContentType = contentType.toLowerCase();
+		if (normalizedContentType.includes("text/html")) {
+			const html = await response.text();
+			const assetUrls = extractAssetUrls(html, options.url);
+			const extractedText = extractReadableTextFromHtml(html);
+			if (isLikelyLoginBlockedPage(options.url, html, extractedText)) {
+				throw new Error("LOGIN_REQUIRED: source returned verification/login wall");
+			}
+
+			writeFileSync(snapshotHtmlPath, html, "utf8");
+			writeFileSync(assetsManifestPath, JSON.stringify({ sourceUrl: options.url, assetUrls }, null, 2), "utf8");
+			writeFileSync(extractedTextPath, extractedText, "utf8");
+
+			return {
+				itemDirectory,
+				snapshotHtmlPath,
+				snapshotAssetsDirectory: assetsDirectory,
+				extractedTextPath,
+				screenshotFallbackPath: null,
+				assetUrls,
+				usedFallback: false,
+				failureCode: "none",
+				failureReason: null,
+			};
 		}
 
-		const html = await response.text();
-		const assetUrls = extractAssetUrls(html, options.url);
-		const extractedText = extractReadableTextFromHtml(html);
-		if (isLikelyLoginBlockedPage(options.url, html, extractedText)) {
-			throw new Error("LOGIN_REQUIRED: source returned verification/login wall");
+		if (isSupportedTextEvidenceContentType(normalizedContentType)) {
+			const extractedText = (await response.text()).replace(/\r\n/g, "\n").trim();
+			if (extractedText.length === 0) {
+				throw new Error(`Unsupported content-type: ${contentType} (empty body)`);
+			}
+			if (hasLoginWallSignals(extractedText)) {
+				throw new Error("LOGIN_REQUIRED: source returned verification/login wall");
+			}
+			writeFileSync(assetsManifestPath, JSON.stringify({ sourceUrl: options.url, assetUrls: [] }, null, 2), "utf8");
+			writeFileSync(extractedTextPath, extractedText, "utf8");
+
+			return {
+				itemDirectory,
+				snapshotHtmlPath: null,
+				snapshotAssetsDirectory: assetsDirectory,
+				extractedTextPath,
+				screenshotFallbackPath: null,
+				assetUrls: [],
+				usedFallback: false,
+				failureCode: "none",
+				failureReason: null,
+			};
 		}
 
-		writeFileSync(snapshotHtmlPath, html, "utf8");
-		writeFileSync(assetsManifestPath, JSON.stringify({ sourceUrl: options.url, assetUrls }, null, 2), "utf8");
-		writeFileSync(extractedTextPath, extractedText, "utf8");
-
-		return {
-			itemDirectory,
-			snapshotHtmlPath,
-			snapshotAssetsDirectory: assetsDirectory,
-			extractedTextPath,
-			screenshotFallbackPath: null,
-			assetUrls,
-			usedFallback: false,
-			failureCode: "none",
-			failureReason: null,
-		};
+		throw new Error(`Unsupported content-type: ${contentType}`);
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error);
 		const failureCode = classifyFailureCode(reason);

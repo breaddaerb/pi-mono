@@ -200,7 +200,8 @@ Main entry: `SonderApp.processCommand(...)` or Telegram URL-text extraction path
    - choose direct snapshot path vs evidence-required path.
 
 3. **Capture/evidence generation** (`src/snapshot/*`)
-   - direct capture: snapshot HTML + assets + extracted text
+   - direct HTML capture: snapshot HTML + assets + extracted text
+   - direct text-evidence capture: usable `text/plain`/markdown stored as extracted text
    - fallback/evidence mode: store pasted text as durable evidence artifacts
 
 4. **Persistence (transactional in app)**

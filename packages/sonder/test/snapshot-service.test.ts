@@ -91,6 +91,34 @@ describe("captureSnapshot", () => {
 		}
 	});
 
+	it("accepts text/plain as direct text evidence capture", async () => {
+		const server = await withServer((_request, response) => {
+			response.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+			response.end("Karpathy: RL is not enough, we need better environments.");
+		});
+
+		const root = mkdtempSync(join(tmpdir(), "sonder-snapshot-"));
+		tempDirs.push(root);
+
+		try {
+			const result = await captureSnapshot({
+				itemId: "item_text_evidence",
+				url: `${server.baseUrl}/tweet.txt`,
+				dataRootDir: root,
+			});
+
+			expect(result.usedFallback).toBe(false);
+			expect(result.failureCode).toBe("none");
+			expect(result.snapshotHtmlPath).toBeNull();
+			expect(result.screenshotFallbackPath).toBeNull();
+
+			const extracted = readFileSync(result.extractedTextPath, "utf8");
+			expect(extracted).toContain("better environments");
+		} finally {
+			await server.close();
+		}
+	});
+
 	it("classifies login-required verification page as fallback", async () => {
 		const server = await withServer((_request, response) => {
 			response.writeHead(200, { "content-type": "text/html; charset=utf-8" });

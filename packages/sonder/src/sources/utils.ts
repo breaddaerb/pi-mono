@@ -1,9 +1,28 @@
 import type { SnapshotFailureCode } from "../snapshot/snapshot-service.js";
 import type { SourcePlatform, SourceStatus } from "./types.js";
 
-export function detectSourcePlatform(url: string): SourcePlatform {
+function unwrapJinaAiUrl(url: URL): string | null {
+	if (url.host.toLowerCase() !== "r.jina.ai") {
+		return null;
+	}
+	const candidatePath = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+	if (!candidatePath.startsWith("http://") && !candidatePath.startsWith("https://")) {
+		return null;
+	}
+	return `${candidatePath}${url.search}`;
+}
+
+function detectSourcePlatformInternal(url: string, depth: number): SourcePlatform {
+	if (depth > 2) {
+		return "web";
+	}
 	try {
-		const host = new URL(url).host.toLowerCase();
+		const parsed = new URL(url);
+		const wrapped = unwrapJinaAiUrl(parsed);
+		if (wrapped) {
+			return detectSourcePlatformInternal(wrapped, depth + 1);
+		}
+		const host = parsed.host.toLowerCase();
 		if (host === "x.com" || host === "twitter.com") {
 			return "twitter";
 		}
@@ -20,6 +39,10 @@ export function detectSourcePlatform(url: string): SourcePlatform {
 		// no-op
 	}
 	return "web";
+}
+
+export function detectSourcePlatform(url: string): SourcePlatform {
+	return detectSourcePlatformInternal(url, 0);
 }
 
 export function mapFailureCodeToSourceStatus(code: SnapshotFailureCode): SourceStatus {

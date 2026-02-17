@@ -29,7 +29,7 @@ Telegram-first conversational PKM for item-anchored thinking.
 | Generic web | Medium | `ok` / `blocked` | Varies by site structure and anti-bot policy |
 | Xiaohongshu | Medium | `ok` / `login_required` / `blocked` | Uses retrieval-time boilerplate cleanup (incl. common filing/license noise); when blocked but extractable, Sonder may auto-derive cleaned evidence via pasted-evidence path |
 | WeChat article | Low-Medium | `login_required` (common) | Verification walls are common; prefer pasted evidence when blocked |
-| X/Twitter | Low-Medium | `login_required` / `fetch_failed` (common) | Login-gated pages are common; pasted evidence path is supported |
+| X/Twitter | Low-Medium | `login_required` / `fetch_failed` (common) | Login-gated pages are common; pasted evidence path is supported. Text-bridge URLs returning `text/plain` (e.g. `r.jina.ai/...`) are accepted as direct text evidence when content is usable. |
 
 When status indicates the link is not usable, Sonder asks for pasted evidence unless it can auto-derive usable cleaned evidence (currently for some Xiaohongshu pages).
 

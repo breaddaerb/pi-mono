@@ -13,6 +13,7 @@ These should remain true unless intentionally redesigned.
 - Item-anchored dialogue as primary interaction model
 - `/open` supports both item mode (`/open <itemId>`) and general mode (`/open`)
 - Snapshot artifacts are durable local evidence (`snapshot.html + assets`, extracted text, fallback artifact)
+- Usable `text/plain`/markdown captures are accepted as text evidence (not auto-marked blocked)
 - Save pipeline persists item/artifact metadata transactionally and cleans partial artifacts on failure
 - Annotations are DB entities (do not mutate snapshot artifacts)
 - Context order for ask/runtime: annotations -> dialogue history -> extracted text

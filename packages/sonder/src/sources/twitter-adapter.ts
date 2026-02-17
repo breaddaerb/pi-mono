@@ -5,7 +5,13 @@ import { looksLikeLoginWall, mapFailureCodeToSourceStatus } from "./utils.js";
 
 function looksLikeTwitterGate(text: string): boolean {
 	const normalized = text.toLowerCase();
-	const signals = ["log in to x", "join x", "sign in to x", "this browser is no longer supported", "x.com"];
+	const signals = [
+		"log in to x",
+		"join x",
+		"sign in to x",
+		"this browser is no longer supported",
+		"create an account",
+	];
 	return signals.some((signal) => normalized.includes(signal));
 }
 
@@ -29,7 +35,7 @@ export class TwitterSourceAdapter implements SourceAdapter {
 		}
 
 		const extracted = readFileSync(snapshot.extractedTextPath, "utf8");
-		if (looksLikeLoginWall(extracted) || looksLikeTwitterGate(extracted) || extracted.trim().length < 180) {
+		if (looksLikeLoginWall(extracted) || looksLikeTwitterGate(extracted) || extracted.trim().length < 32) {
 			return {
 				platform: "twitter",
 				status: "login_required",

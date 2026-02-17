@@ -574,6 +574,40 @@ describe("SonderApp", () => {
 		}
 	});
 
+	it("accepts text/plain wrapped source as usable evidence without pasted text", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+			snapshotFetchImpl: async () =>
+				new Response("@karpathy: the benchmark is part of the environment design.", {
+					status: 200,
+					headers: { "content-type": "text/plain; charset=utf-8" },
+				}),
+		});
+
+		try {
+			const saveResult = await app.saveFromInput({
+				url: "https://r.jina.ai/https://x.com/karpathy/status/2023476423055601903?s=20",
+			});
+			expect(saveResult.sourcePlatform).toBe("twitter");
+			expect(saveResult.sourceStatus).toBe("ok");
+			expect(saveResult.needsUserEvidence).toBe(false);
+
+			const artifacts = app.artifactsRepo.listByItemId(saveResult.itemId);
+			expect(artifacts.some((artifact) => artifact.kind === "extracted-text")).toBe(true);
+			expect(artifacts.some((artifact) => artifact.kind === "snapshot-html")).toBe(false);
+		} finally {
+			app.close();
+		}
+	});
+
 	it("marks blocked source as unusable and requests pasted evidence", async () => {
 		const server = await withServer((_request, response) => {
 			response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
