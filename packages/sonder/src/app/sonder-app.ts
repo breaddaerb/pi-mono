@@ -15,6 +15,7 @@ import {
 } from "../storage/index.js";
 import type { Annotation, DialogueTurnStatus, ItemSourceType } from "../types.js";
 import { AnnotationService } from "./annotation-service.js";
+import { DialogueService } from "./dialogue-service.js";
 import { DiscoveryService } from "./discovery-service.js";
 import {
 	type SaveEvidenceType,
@@ -174,6 +175,7 @@ export class SonderApp {
 	private readonly responder: AskResponder;
 	private readonly chatModeStateRepo: ChatModeStateRepo;
 	private readonly annotationService: AnnotationService;
+	private readonly dialogueService: DialogueService;
 	private readonly discoveryService: DiscoveryService;
 	private readonly saveService: SaveService;
 
@@ -205,6 +207,11 @@ export class SonderApp {
 			itemsRepo: this.itemsRepo,
 			now: options.now,
 		});
+		this.dialogueService = new DialogueService({
+			itemsRepo: this.itemsRepo,
+			dialogueRepo: this.dialogueRepo,
+			askService: this.askService,
+		});
 		this.discoveryService = new DiscoveryService({
 			itemsRepo: this.itemsRepo,
 			artifactsRepo: this.artifactsRepo,
@@ -221,50 +228,19 @@ export class SonderApp {
 	}
 
 	openItemDialogue(itemId: string, preferredSessionId?: string): SonderDialogueSessionInfo {
-		this.ensureItemExists(itemId);
-		const ensured = this.askService.ensureSession(itemId, preferredSessionId);
-		return {
-			itemId,
-			sessionId: ensured.sessionId,
-			created: ensured.created,
-		};
+		return this.dialogueService.openItemDialogue(itemId, preferredSessionId);
 	}
 
 	createItemDialogue(itemId: string): SonderDialogueSessionInfo {
-		this.ensureItemExists(itemId);
-		const created = this.askService.createSession(itemId);
-		return {
-			itemId,
-			sessionId: created.sessionId,
-			created: true,
-		};
+		return this.dialogueService.createItemDialogue(itemId);
 	}
 
 	listItemDialogues(itemId: string): Array<{ sessionId: string; createdAt: string; title: string }> {
-		this.ensureItemExists(itemId);
-		return this.dialogueRepo.listSessionsByItemId(itemId).map((session) => ({
-			sessionId: session.id,
-			createdAt: session.createdAt,
-			title: session.title,
-		}));
+		return this.dialogueService.listItemDialogues(itemId);
 	}
 
 	listDialogueHistory(sessionId: string, limit = 20): SonderDialogueTurnItem[] {
-		const session = this.dialogueRepo.findSessionById(sessionId);
-		if (!session) {
-			throw new Error(`Session not found: ${sessionId}`);
-		}
-		const turns = this.dialogueRepo.listTurnsBySessionId(sessionId);
-		const start = Math.max(0, turns.length - Math.max(1, Math.floor(limit)));
-		return turns.slice(start).map((turn) => ({
-			id: turn.id,
-			sessionId: turn.sessionId,
-			role: turn.role,
-			content: turn.content,
-			status: turn.status,
-			errorMessage: turn.errorMessage,
-			createdAt: turn.createdAt,
-		}));
+		return this.dialogueService.listDialogueHistory(sessionId, limit);
 	}
 
 	loadChatModeState(chatId: number): StoredChatModeState | null {
@@ -280,12 +256,11 @@ export class SonderApp {
 	}
 
 	hasItem(itemId: string): boolean {
-		return this.itemsRepo.findById(itemId) !== null;
+		return this.dialogueService.hasItem(itemId);
 	}
 
 	isSessionForItem(itemId: string, sessionId: string): boolean {
-		const session = this.dialogueRepo.findSessionById(sessionId);
-		return Boolean(session && session.itemId === itemId);
+		return this.dialogueService.isSessionForItem(itemId, sessionId);
 	}
 
 	createAnnotation(input: {
@@ -335,15 +310,7 @@ export class SonderApp {
 	}
 
 	resumeItemDialogue(sessionId: string): SonderDialogueSessionInfo {
-		const session = this.dialogueRepo.findSessionById(sessionId);
-		if (!session) {
-			throw new Error(`Session not found: ${sessionId}`);
-		}
-		return {
-			itemId: session.itemId,
-			sessionId: session.id,
-			created: false,
-		};
+		return this.dialogueService.resumeItemDialogue(sessionId);
 	}
 
 	async askInItemDialogue(
@@ -514,12 +481,6 @@ export class SonderApp {
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			return { ok: false, error: { code: "RUNTIME_ERROR", message } };
-		}
-	}
-
-	private ensureItemExists(itemId: string): void {
-		if (!this.itemsRepo.findById(itemId)) {
-			throw new Error(`Item not found: ${itemId}`);
 		}
 	}
 
