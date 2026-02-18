@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	type HistoryCallbackAction,
 	type HistoryCallbackContext,
+	handleDiscoveryItemCallback,
 	handleHistoryCallback,
 } from "../src/transport/telegram-callback-handlers.js";
 
@@ -76,6 +77,59 @@ function createHistoryContext(input: {
 	};
 }
 
+type DiscoveryAction = "find_open" | "find_del" | "list_open" | "list_del";
+
+function createDiscoveryContext(input: {
+	action: DiscoveryAction;
+	argument: string;
+	menuKind?: "find" | "list";
+	menuExists?: boolean;
+	itemId?: string | null;
+}): {
+	context: Parameters<typeof handleDiscoveryItemCallback>[0];
+	sent: SentMessage[];
+	chatModes: Array<{ mode: "item"; itemId: string; sessionId: string }>;
+	openedMessages: Array<{ chatId: number; header: string; itemId: string; sessionId: string }>;
+	deleted: string[];
+} {
+	const sent: SentMessage[] = [];
+	const chatModes: Array<{ mode: "item"; itemId: string; sessionId: string }> = [];
+	const openedMessages: Array<{ chatId: number; header: string; itemId: string; sessionId: string }> = [];
+	const deleted: string[] = [];
+	const menu = input.menuExists === false ? null : { kind: input.menuKind ?? "find" };
+	const selectedItemId = input.itemId === undefined ? "item-1" : input.itemId;
+
+	return {
+		context: {
+			chatId: 7,
+			menuId: "menu-d",
+			action: input.action,
+			argument: input.argument,
+			getItemMenu: () => menu,
+			getMenuItemId: () => selectedItemId,
+			deleteItemAndNotify: async (_chatId, itemId) => {
+				deleted.push(itemId);
+			},
+			buildDiscoveryMenuText: () => "Discovery text",
+			buildDiscoveryMenuKeyboard: (menuId) => [[{ text: "1 Open", callbackData: `${menuId}:1` }]],
+			openItemDialogue: (itemId) => ({ itemId, sessionId: `session-for-${itemId}` }),
+			setChatMode: (_chatId, mode) => {
+				chatModes.push(mode);
+			},
+			sendItemModeOpenedMessage: async (chatId, header, itemId, sessionId) => {
+				openedMessages.push({ chatId, header, itemId, sessionId });
+			},
+			sendMessage: async (chatId, text, options) => {
+				sent.push({ chatId, text, options });
+			},
+		},
+		sent,
+		chatModes,
+		openedMessages,
+		deleted,
+	};
+}
+
 describe("telegram callback handlers", () => {
 	it("handles history full callback and sends full turn content", async () => {
 		const { context, sent } = createHistoryContext({ action: "hist_full", argument: "1" });
@@ -115,5 +169,50 @@ describe("telegram callback handlers", () => {
 		expect(handled).toBe(true);
 		expect(sent).toHaveLength(1);
 		expect(sent[0]?.text).toContain("history menu expired");
+	});
+
+	it("handles discovery open callback and enters item mode", async () => {
+		const { context, sent, chatModes, openedMessages } = createDiscoveryContext({
+			action: "find_open",
+			argument: "1",
+			menuKind: "find",
+			itemId: "item-open",
+		});
+		const handled = await handleDiscoveryItemCallback(context);
+
+		expect(handled).toBe(true);
+		expect(chatModes).toEqual([{ mode: "item", itemId: "item-open", sessionId: "session-for-item-open" }]);
+		expect(openedMessages).toHaveLength(1);
+		expect(openedMessages[0]?.header).toContain("Item mode opened from result #1");
+		expect(sent).toHaveLength(0);
+	});
+
+	it("handles discovery delete callback and re-renders menu", async () => {
+		const { context, sent, deleted } = createDiscoveryContext({
+			action: "list_del",
+			argument: "1",
+			menuKind: "list",
+			itemId: "item-del",
+		});
+		const handled = await handleDiscoveryItemCallback(context);
+
+		expect(handled).toBe(true);
+		expect(deleted).toEqual(["item-del"]);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]?.text).toBe("Discovery text");
+		expect(sent[0]?.options?.inlineKeyboard?.[0]?.[0]?.callbackData).toBe("menu-d:1");
+	});
+
+	it("returns guidance when discovery menu action does not match menu kind", async () => {
+		const { context, sent } = createDiscoveryContext({
+			action: "find_open",
+			argument: "1",
+			menuKind: "list",
+		});
+		const handled = await handleDiscoveryItemCallback(context);
+
+		expect(handled).toBe(true);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]?.text).toContain("no longer valid");
 	});
 });

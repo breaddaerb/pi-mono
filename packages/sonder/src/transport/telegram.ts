@@ -6,6 +6,7 @@ import type { ParsedTelegramModeCommand } from "../commands/parse-mode-command.j
 import { parseTelegramModeCommand } from "../commands/parse-mode-command.js";
 import { buildCallbackPayload, type CallbackAction, parseCallbackPayload } from "./telegram-callback.js";
 import {
+	handleDiscoveryItemCallback,
 	handleHistoryCallback,
 	handleModelSetCallback,
 	handleSessionNewCallback,
@@ -1209,45 +1210,37 @@ export class TelegramBotRunner {
 				}
 			}
 
-			const menu = this.getItemMenu(chatId, payload.menuId);
-			if (!menu) {
-				await this.api.sendMessage(chatId, "This menu expired. Use /open or /find again.");
-				return;
-			}
-			const expectedKind: MenuKind = payload.action.startsWith("list_") ? "list" : "find";
-			if (menu.kind !== expectedKind) {
-				await this.api.sendMessage(
-					chatId,
-					"This menu action is no longer valid. Use /open, /list, or /find again.",
-				);
-				return;
-			}
-			const itemId = this.getMenuItemId(menu, payload.argument);
-			if (!itemId) {
-				await this.api.sendMessage(chatId, "Invalid selection. Use /list or /find again.");
+			const discoveryAction =
+				payload.action === "find_open" ||
+				payload.action === "find_del" ||
+				payload.action === "list_open" ||
+				payload.action === "list_del"
+					? payload.action
+					: null;
+			if (!discoveryAction) {
+				await this.api.sendMessage(chatId, "Unsupported action. Use /open or /find again.");
 				return;
 			}
 
-			if (payload.action === "find_del" || payload.action === "list_del") {
-				await this.deleteItemAndNotify(chatId, itemId);
-				const refreshedMenu = this.getItemMenu(chatId, payload.menuId);
-				if (refreshedMenu) {
-					const responseText = this.buildDiscoveryMenuText(refreshedMenu);
-					const inlineKeyboard = this.buildDiscoveryMenuKeyboard(payload.menuId, refreshedMenu);
-					await this.api.sendMessage(chatId, responseText, { inlineKeyboard });
-				}
-				return;
-			}
-
-			const opened = this.app.openItemDialogue(itemId);
-			this.setChatMode(chatId, {
-				mode: "item",
-				itemId: opened.itemId,
-				sessionId: opened.sessionId,
+			const handled = await handleDiscoveryItemCallback({
+				chatId,
+				menuId: payload.menuId,
+				action: discoveryAction,
+				argument: payload.argument,
+				getItemMenu: this.getItemMenu.bind(this),
+				getMenuItemId: (menu, argument) => this.getMenuItemId(menu as ItemMenuState, argument),
+				deleteItemAndNotify: this.deleteItemAndNotify.bind(this),
+				buildDiscoveryMenuText: (menu) => this.buildDiscoveryMenuText(menu as ItemMenuState),
+				buildDiscoveryMenuKeyboard: (menuId, menu) =>
+					this.buildDiscoveryMenuKeyboard(menuId, menu as ItemMenuState),
+				openItemDialogue: this.app.openItemDialogue.bind(this.app),
+				setChatMode: this.setChatMode.bind(this),
+				sendItemModeOpenedMessage: this.sendItemModeOpenedMessage.bind(this),
+				sendMessage: this.api.sendMessage.bind(this.api),
 			});
-
-			const prompt = `🧠 Item mode opened from result #${payload.argument}.`;
-			await this.sendItemModeOpenedMessage(chatId, prompt, opened.itemId, opened.sessionId);
+			if (handled) {
+				return;
+			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			await this.api.sendMessage(chatId, `Error (RUNTIME_ERROR): ${message}`);

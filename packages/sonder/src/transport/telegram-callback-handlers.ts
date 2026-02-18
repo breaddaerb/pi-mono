@@ -16,6 +16,10 @@ interface DialogueSessionInfoLike {
 	sessionId: string;
 }
 
+interface ItemMenuStateLike {
+	kind: "find" | "list";
+}
+
 interface HistoryMenuStateLike {
 	sessionId: string;
 	page: number;
@@ -31,6 +35,8 @@ interface DialogueTurnLike {
 }
 
 export type HistoryCallbackAction = "hist_prev" | "hist_next" | "hist_back" | "hist_full";
+
+export type DiscoveryItemCallbackAction = "find_open" | "find_del" | "list_open" | "list_del";
 
 type ChatModeSetter = (chatId: number, mode: { mode: "item"; itemId: string; sessionId: string }) => void;
 
@@ -134,6 +140,66 @@ export async function handleSessionNewCallback(context: SessionCallbackContext):
 		opened.itemId,
 		opened.sessionId,
 	);
+	return true;
+}
+
+export interface DiscoveryItemCallbackContext {
+	chatId: number;
+	menuId: string;
+	action: DiscoveryItemCallbackAction;
+	argument: string;
+	getItemMenu: (chatId: number, menuId: string) => ItemMenuStateLike | null;
+	getMenuItemId: (menu: ItemMenuStateLike, argument: string) => string | null;
+	deleteItemAndNotify: (chatId: number, itemId: string) => Promise<void>;
+	buildDiscoveryMenuText: (menu: ItemMenuStateLike) => string;
+	buildDiscoveryMenuKeyboard: (menuId: string, menu: ItemMenuStateLike) => InlineKeyboard;
+	openItemDialogue: (itemId: string) => DialogueSessionInfoLike;
+	setChatMode: ChatModeSetter;
+	sendItemModeOpenedMessage: (chatId: number, header: string, itemId: string, sessionId: string) => Promise<void>;
+	sendMessage: MessageSender;
+}
+
+export async function handleDiscoveryItemCallback(context: DiscoveryItemCallbackContext): Promise<boolean> {
+	const menu = context.getItemMenu(context.chatId, context.menuId);
+	if (!menu) {
+		await context.sendMessage(context.chatId, "This menu expired. Use /open or /find again.");
+		return true;
+	}
+
+	const expectedKind: ItemMenuStateLike["kind"] = context.action.startsWith("list_") ? "list" : "find";
+	if (menu.kind !== expectedKind) {
+		await context.sendMessage(
+			context.chatId,
+			"This menu action is no longer valid. Use /open, /list, or /find again.",
+		);
+		return true;
+	}
+
+	const itemId = context.getMenuItemId(menu, context.argument);
+	if (!itemId) {
+		await context.sendMessage(context.chatId, "Invalid selection. Use /list or /find again.");
+		return true;
+	}
+
+	if (context.action === "find_del" || context.action === "list_del") {
+		await context.deleteItemAndNotify(context.chatId, itemId);
+		const refreshedMenu = context.getItemMenu(context.chatId, context.menuId);
+		if (refreshedMenu) {
+			const responseText = context.buildDiscoveryMenuText(refreshedMenu);
+			const inlineKeyboard = context.buildDiscoveryMenuKeyboard(context.menuId, refreshedMenu);
+			await context.sendMessage(context.chatId, responseText, { inlineKeyboard });
+		}
+		return true;
+	}
+
+	const opened = context.openItemDialogue(itemId);
+	context.setChatMode(context.chatId, {
+		mode: "item",
+		itemId: opened.itemId,
+		sessionId: opened.sessionId,
+	});
+	const prompt = `🧠 Item mode opened from result #${context.argument}.`;
+	await context.sendItemModeOpenedMessage(context.chatId, prompt, opened.itemId, opened.sessionId);
 	return true;
 }
 
