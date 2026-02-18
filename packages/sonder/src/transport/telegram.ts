@@ -4,6 +4,7 @@ import { type Dispatcher, ProxyAgent, fetch as undiciFetch } from "undici";
 import type { SonderApp, SonderCommandResult } from "../app/index.js";
 import type { ParsedTelegramModeCommand } from "../commands/parse-mode-command.js";
 import { parseTelegramModeCommand } from "../commands/parse-mode-command.js";
+import { handleActiveModeMessage } from "./telegram-active-mode-message-handler.js";
 import { buildCallbackPayload } from "./telegram-callback.js";
 import { routeTelegramCallback } from "./telegram-callback-router.js";
 import { extractUrlAndPastedText } from "./telegram-input.js";
@@ -1070,23 +1071,17 @@ export class TelegramBotRunner {
 				}
 
 				this.clearPendingSaveInput(chatId);
-				if (activeMode.mode === "item") {
-					const askResult = await this.app.askInItemDialogue(activeMode.itemId, activeMode.sessionId, text);
-					const formatted = this.formatContextualAnswer(chatId, askResult.answer, askResult.itemId);
-					for (const chunk of splitForTelegram(formatted)) {
-						await this.api.sendMessage(chatId, chunk);
-					}
-					return;
-				}
-
-				const response = await this.app.chatWithoutItem(activeMode.sessionId, text, activeMode.history);
-				activeMode.history.push({ role: "user", content: text });
-				activeMode.history.push({ role: "assistant", content: response.answer });
-				this.setChatMode(chatId, activeMode);
-				const formatted = this.formatContextualAnswer(chatId, response.answer);
-				for (const chunk of splitForTelegram(formatted)) {
-					await this.api.sendMessage(chatId, chunk);
-				}
+				await handleActiveModeMessage({
+					chatId,
+					text,
+					activeMode,
+					askInItemDialogue: this.app.askInItemDialogue.bind(this.app),
+					chatWithoutItem: this.app.chatWithoutItem.bind(this.app),
+					setChatMode: this.setChatMode.bind(this),
+					formatContextualAnswer: this.formatContextualAnswer.bind(this),
+					splitForTelegram,
+					sendMessage: this.api.sendMessage.bind(this.api),
+				});
 				return;
 			}
 
