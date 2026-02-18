@@ -659,8 +659,8 @@ function renderViewerPage(itemId: string): string {
         const endElement = range.endContainer.nodeType === Node.TEXT_NODE
           ? range.endContainer.parentElement
           : range.endContainer;
-        const bodyText = (doc.body?.innerText || '').replace(/s+/g, ' ').trim();
-        const normalizedText = String(exactText || '').replace(/s+/g, ' ').trim();
+        const bodyText = (doc.body?.innerText || '').replace(/\\s+/g, ' ').trim();
+        const normalizedText = String(exactText || '').replace(/\\s+/g, ' ').trim();
         const start = normalizedText ? bodyText.indexOf(normalizedText) : -1;
         const end = start >= 0 ? start + normalizedText.length : -1;
         return {

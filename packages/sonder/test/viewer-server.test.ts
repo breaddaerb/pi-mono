@@ -241,6 +241,8 @@ describe("viewer server", () => {
 			expect(page).toContain("Save note");
 			expect(page).toContain("Asia/Shanghai");
 			expect(page).toContain("formatDisplayTime");
+			expect(page).toContain("replace(/\\s+/g, ' ')");
+			expect(page).not.toContain("replace(/s+/g, ' ')");
 			expect(page).not.toContain("Add note for this annotation");
 			expect(page).not.toContain("btnNote");
 
