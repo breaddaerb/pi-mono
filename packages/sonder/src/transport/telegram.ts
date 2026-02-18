@@ -1,9 +1,17 @@
-import { randomUUID } from "node:crypto";
 import type { Writable } from "node:stream";
 import { type Dispatcher, ProxyAgent, fetch as undiciFetch } from "undici";
 import type { SonderApp, SonderCommandResult } from "../app/index.js";
 import type { ParsedTelegramModeCommand } from "../commands/parse-mode-command.js";
 import { parseTelegramModeCommand } from "../commands/parse-mode-command.js";
+import {
+	type HistoryMenuState,
+	type ItemMenuEntry,
+	type ItemMenuState,
+	type MenuKind,
+	type ModelMenuState,
+	type SessionMenuState,
+	TelegramMenuStore,
+} from "./menu-store.js";
 import { handleActiveModeMessage } from "./telegram-active-mode-message-handler.js";
 import { buildCallbackPayload } from "./telegram-callback.js";
 import { routeTelegramCallback } from "./telegram-callback-router.js";
@@ -15,9 +23,6 @@ import {
 	parseSourceFilter,
 	parseTagPage,
 	parseTimeFilter,
-	type SortFilter,
-	type SourceFilter,
-	type TimeFilter,
 } from "./telegram-discovery-filters.js";
 import { formatDisplayTime } from "./telegram-display-time.js";
 import { extractUrlAndPastedText } from "./telegram-input.js";
@@ -258,54 +263,6 @@ export class TelegramHttpApi implements TelegramApi {
 
 const FIND_MENU_TTL_MS = 15 * 60 * 1000;
 
-type MenuKind = "find" | "list";
-
-interface ItemMenuEntry {
-	id: string;
-	createdAt: string;
-	sourceType: string;
-	originalUrl: string;
-	tags: string[];
-	reasons: string[];
-	snippets: string[];
-}
-
-interface ItemMenuState {
-	kind: MenuKind;
-	query: string | null;
-	entries: ItemMenuEntry[];
-	page: number;
-	pageSize: number;
-	time: TimeFilter;
-	source: SourceFilter;
-	tag: string | null;
-	sort: SortFilter;
-	tagPage: number;
-	createdAtMs: number;
-	expiresAtMs: number;
-}
-
-interface SessionMenuState {
-	itemId: string;
-	sessionIds: string[];
-	createdAtMs: number;
-	expiresAtMs: number;
-}
-
-interface ModelMenuState {
-	modelIds: string[];
-	createdAtMs: number;
-	expiresAtMs: number;
-}
-
-interface HistoryMenuState {
-	sessionId: string;
-	page: number;
-	pageSize: number;
-	createdAtMs: number;
-	expiresAtMs: number;
-}
-
 type SaveCommandResult = Extract<SonderCommandResult, { type: "save" }>;
 
 export class TelegramBotRunner {
@@ -316,10 +273,7 @@ export class TelegramBotRunner {
 	private readonly getViewerItemUrl?: (itemId: string) => string;
 	private readonly modelSelector: TelegramRuntimeModelSelector | null;
 	private readonly chatModeStore: TelegramChatModeStore;
-	private readonly itemMenus = new Map<number, Map<string, ItemMenuState>>();
-	private readonly sessionMenus = new Map<number, Map<string, SessionMenuState>>();
-	private readonly modelMenus = new Map<number, Map<string, ModelMenuState>>();
-	private readonly historyMenus = new Map<number, Map<string, HistoryMenuState>>();
+	private readonly menuStore: TelegramMenuStore;
 	private readonly pendingSaveChats = new Set<number>();
 
 	constructor(
@@ -333,6 +287,7 @@ export class TelegramBotRunner {
 		this.getViewerItemUrl = options.getViewerItemUrl;
 		this.modelSelector = options.modelSelector ?? null;
 		this.chatModeStore = new TelegramChatModeStore(this.app);
+		this.menuStore = new TelegramMenuStore(FIND_MENU_TTL_MS);
 	}
 
 	async pollOnce(): Promise<void> {
@@ -405,41 +360,11 @@ export class TelegramBotRunner {
 	}
 
 	private createItemMenu(chatId: number, kind: MenuKind, entries: ItemMenuEntry[], query: string | null): string {
-		const chatMenus = this.itemMenus.get(chatId) ?? new Map<string, ItemMenuState>();
-		const createdAtMs = Date.now();
-		const menuId = randomUUID().slice(0, 8);
-		chatMenus.set(menuId, {
-			kind,
-			query,
-			entries,
-			page: 0,
-			pageSize: 5,
-			time: "all",
-			source: "any",
-			tag: null,
-			sort: "newest",
-			tagPage: 0,
-			createdAtMs,
-			expiresAtMs: createdAtMs + FIND_MENU_TTL_MS,
-		});
-		this.itemMenus.set(chatId, chatMenus);
-		return menuId;
+		return this.menuStore.createItemMenu(chatId, kind, entries, query);
 	}
 
 	private getItemMenu(chatId: number, menuId: string): ItemMenuState | null {
-		const chatMenus = this.itemMenus.get(chatId);
-		if (!chatMenus) {
-			return null;
-		}
-		const menu = chatMenus.get(menuId);
-		if (!menu) {
-			return null;
-		}
-		if (Date.now() > menu.expiresAtMs) {
-			chatMenus.delete(menuId);
-			return null;
-		}
-		return menu;
+		return this.menuStore.getItemMenu(chatId, menuId);
 	}
 
 	private applyItemMenuFilters(menu: ItemMenuState): ItemMenuEntry[] {
@@ -648,62 +573,19 @@ export class TelegramBotRunner {
 	}
 
 	private createSessionMenu(chatId: number, itemId: string, sessionIds: string[]): string {
-		const chatMenus = this.sessionMenus.get(chatId) ?? new Map<string, SessionMenuState>();
-		const createdAtMs = Date.now();
-		const menuId = randomUUID().slice(0, 8);
-		chatMenus.set(menuId, {
-			itemId,
-			sessionIds,
-			createdAtMs,
-			expiresAtMs: createdAtMs + FIND_MENU_TTL_MS,
-		});
-		this.sessionMenus.set(chatId, chatMenus);
-		return menuId;
+		return this.menuStore.createSessionMenu(chatId, itemId, sessionIds);
 	}
 
 	private getSessionMenu(chatId: number, menuId: string): SessionMenuState | null {
-		const chatMenus = this.sessionMenus.get(chatId);
-		if (!chatMenus) {
-			return null;
-		}
-		const menu = chatMenus.get(menuId);
-		if (!menu) {
-			return null;
-		}
-		if (Date.now() > menu.expiresAtMs) {
-			chatMenus.delete(menuId);
-			return null;
-		}
-		return menu;
+		return this.menuStore.getSessionMenu(chatId, menuId);
 	}
 
 	private createModelMenu(chatId: number, modelIds: string[]): string {
-		const chatMenus = this.modelMenus.get(chatId) ?? new Map<string, ModelMenuState>();
-		const createdAtMs = Date.now();
-		const menuId = randomUUID().slice(0, 8);
-		chatMenus.set(menuId, {
-			modelIds,
-			createdAtMs,
-			expiresAtMs: createdAtMs + FIND_MENU_TTL_MS,
-		});
-		this.modelMenus.set(chatId, chatMenus);
-		return menuId;
+		return this.menuStore.createModelMenu(chatId, modelIds);
 	}
 
 	private getModelMenu(chatId: number, menuId: string): ModelMenuState | null {
-		const chatMenus = this.modelMenus.get(chatId);
-		if (!chatMenus) {
-			return null;
-		}
-		const menu = chatMenus.get(menuId);
-		if (!menu) {
-			return null;
-		}
-		if (Date.now() > menu.expiresAtMs) {
-			chatMenus.delete(menuId);
-			return null;
-		}
-		return menu;
+		return this.menuStore.getModelMenu(chatId, menuId);
 	}
 
 	private getModelIdByIndex(menu: ModelMenuState, argument: string): string | null {
@@ -735,34 +617,11 @@ export class TelegramBotRunner {
 	}
 
 	private createHistoryMenu(chatId: number, sessionId: string, page: number, pageSize: number): string {
-		const chatMenus = this.historyMenus.get(chatId) ?? new Map<string, HistoryMenuState>();
-		const createdAtMs = Date.now();
-		const menuId = randomUUID().slice(0, 8);
-		chatMenus.set(menuId, {
-			sessionId,
-			page,
-			pageSize,
-			createdAtMs,
-			expiresAtMs: createdAtMs + FIND_MENU_TTL_MS,
-		});
-		this.historyMenus.set(chatId, chatMenus);
-		return menuId;
+		return this.menuStore.createHistoryMenu(chatId, sessionId, page, pageSize);
 	}
 
 	private getHistoryMenu(chatId: number, menuId: string): HistoryMenuState | null {
-		const chatMenus = this.historyMenus.get(chatId);
-		if (!chatMenus) {
-			return null;
-		}
-		const menu = chatMenus.get(menuId);
-		if (!menu) {
-			return null;
-		}
-		if (Date.now() > menu.expiresAtMs) {
-			chatMenus.delete(menuId);
-			return null;
-		}
-		return menu;
+		return this.menuStore.getHistoryMenu(chatId, menuId);
 	}
 
 	private getSessionIdByIndex(menu: SessionMenuState, argument: string): string | null {
@@ -874,17 +733,13 @@ export class TelegramBotRunner {
 	}
 
 	private deleteItemFromMenus(chatId: number, itemId: string): void {
-		const itemMenus = this.itemMenus.get(chatId);
-		if (!itemMenus) {
-			return;
-		}
-		for (const [, menu] of itemMenus) {
+		this.menuStore.forEachItemMenu(chatId, (menu) => {
 			menu.entries = menu.entries.filter((entry) => entry.id !== itemId);
 			if (menu.page > 0) {
 				const totalPages = Math.max(1, Math.ceil(menu.entries.length / menu.pageSize));
 				menu.page = Math.min(menu.page, totalPages - 1);
 			}
-		}
+		});
 	}
 
 	private async deleteItemAndNotify(chatId: number, itemId: string): Promise<void> {
