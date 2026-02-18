@@ -2,7 +2,6 @@ import type { Writable } from "node:stream";
 import { type Dispatcher, ProxyAgent, fetch as undiciFetch } from "undici";
 import type { SonderApp, SonderCommandResult } from "../app/index.js";
 import type { ParsedTelegramModeCommand } from "../commands/parse-mode-command.js";
-import { parseTelegramModeCommand } from "../commands/parse-mode-command.js";
 import {
 	type HistoryMenuState,
 	type ItemMenuEntry,
@@ -26,12 +25,13 @@ import {
 } from "./telegram-discovery-filters.js";
 import { formatDisplayTime } from "./telegram-display-time.js";
 import { extractUrlAndPastedText } from "./telegram-input.js";
+import { routeTelegramMessage } from "./telegram-message-router.js";
 import { handleModeCommand as handleModeCommandCore } from "./telegram-mode-command-handler.js";
 import { type ChatModeState, TelegramChatModeStore } from "./telegram-mode-store.js";
 import { handlePlainMessage } from "./telegram-plain-message-handler.js";
 import { formatCommandResult, formatPollingError, splitForTelegram, truncateMiddle } from "./telegram-renderers.js";
 import { handleSlashMessage } from "./telegram-slash-command-handler.js";
-import { sleep, stripTelegramCommandMention } from "./telegram-utils.js";
+import { sleep } from "./telegram-utils.js";
 
 interface TelegramGetUpdatesResponse {
 	ok: boolean;
@@ -820,63 +820,64 @@ export class TelegramBotRunner {
 
 	private async handleMessage(chatId: number, text: string): Promise<void> {
 		try {
-			const normalizedInput = stripTelegramCommandMention(text);
-			const modeCommand = parseTelegramModeCommand(normalizedInput);
-			if (modeCommand) {
-				this.clearPendingSaveInput(chatId);
-				await this.handleModeCommand(chatId, modeCommand);
-				return;
-			}
-
-			if (!normalizedInput.startsWith("/")) {
-				await handlePlainMessage({
-					chatId,
-					text,
-					normalizedInput,
-					hasPendingSaveInput: this.hasPendingSaveInput.bind(this),
-					clearPendingSaveInput: this.clearPendingSaveInput.bind(this),
-					getChatMode: this.getChatMode.bind(this),
-					processCommand: this.app.processCommand.bind(this.app),
-					saveFromInput: this.app.saveFromInput.bind(this.app),
-					sendSaveResultAndMaybeOpenItemMode: this.sendSaveResultAndMaybeOpenItemMode.bind(this),
-					extractUrlAndPastedText,
-					handleActiveModeMessage: async (chatId, text, activeMode) => {
-						await handleActiveModeMessage({
-							chatId,
-							text,
-							activeMode,
-							askInItemDialogue: this.app.askInItemDialogue.bind(this.app),
-							chatWithoutItem: this.app.chatWithoutItem.bind(this.app),
-							setChatMode: this.setChatMode.bind(this),
-							formatContextualAnswer: this.formatContextualAnswer.bind(this),
-							splitForTelegram,
-							sendMessage: this.api.sendMessage.bind(this.api),
-						});
-					},
-					sendMessage: this.api.sendMessage.bind(this.api),
-				});
-				return;
-			}
-
-			await handleSlashMessage({
+			await routeTelegramMessage({
 				chatId,
-				normalizedInput,
-				markSaveInputPending: this.markSaveInputPending.bind(this),
+				text,
 				clearPendingSaveInput: this.clearPendingSaveInput.bind(this),
-				processCommand: this.app.processCommand.bind(this.app),
-				sendSaveResultAndMaybeOpenItemMode: this.sendSaveResultAndMaybeOpenItemMode.bind(this),
-				createItemMenu: this.createItemMenu.bind(this),
-				getItemMenu: this.getItemMenu.bind(this),
-				buildDiscoveryMenuText: (menu) => this.buildDiscoveryMenuText(menu as ItemMenuState),
-				buildDiscoveryMenuKeyboard: (menuId, menu) =>
-					this.buildDiscoveryMenuKeyboard(menuId, menu as ItemMenuState),
-				splitForTelegram,
-				sendMessage: this.api.sendMessage.bind(this.api),
+				handleModeCommand: this.handleModeCommand.bind(this),
+				handlePlainMessage: this.handlePlainMessageRoute.bind(this),
+				handleSlashMessage: this.handleSlashMessageRoute.bind(this),
 			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			await this.api.sendMessage(chatId, `Error (RUNTIME_ERROR): ${message}`);
 		}
+	}
+
+	private async handlePlainMessageRoute(chatId: number, text: string, normalizedInput: string): Promise<void> {
+		await handlePlainMessage({
+			chatId,
+			text,
+			normalizedInput,
+			hasPendingSaveInput: this.hasPendingSaveInput.bind(this),
+			clearPendingSaveInput: this.clearPendingSaveInput.bind(this),
+			getChatMode: this.getChatMode.bind(this),
+			processCommand: this.app.processCommand.bind(this.app),
+			saveFromInput: this.app.saveFromInput.bind(this.app),
+			sendSaveResultAndMaybeOpenItemMode: this.sendSaveResultAndMaybeOpenItemMode.bind(this),
+			extractUrlAndPastedText,
+			handleActiveModeMessage: async (chatId, text, activeMode) => {
+				await handleActiveModeMessage({
+					chatId,
+					text,
+					activeMode,
+					askInItemDialogue: this.app.askInItemDialogue.bind(this.app),
+					chatWithoutItem: this.app.chatWithoutItem.bind(this.app),
+					setChatMode: this.setChatMode.bind(this),
+					formatContextualAnswer: this.formatContextualAnswer.bind(this),
+					splitForTelegram,
+					sendMessage: this.api.sendMessage.bind(this.api),
+				});
+			},
+			sendMessage: this.api.sendMessage.bind(this.api),
+		});
+	}
+
+	private async handleSlashMessageRoute(chatId: number, normalizedInput: string): Promise<void> {
+		await handleSlashMessage({
+			chatId,
+			normalizedInput,
+			markSaveInputPending: this.markSaveInputPending.bind(this),
+			clearPendingSaveInput: this.clearPendingSaveInput.bind(this),
+			processCommand: this.app.processCommand.bind(this.app),
+			sendSaveResultAndMaybeOpenItemMode: this.sendSaveResultAndMaybeOpenItemMode.bind(this),
+			createItemMenu: this.createItemMenu.bind(this),
+			getItemMenu: this.getItemMenu.bind(this),
+			buildDiscoveryMenuText: (menu) => this.buildDiscoveryMenuText(menu as ItemMenuState),
+			buildDiscoveryMenuKeyboard: (menuId, menu) => this.buildDiscoveryMenuKeyboard(menuId, menu as ItemMenuState),
+			splitForTelegram,
+			sendMessage: this.api.sendMessage.bind(this.api),
+		});
 	}
 
 	private async handleModeCommand(chatId: number, command: ParsedTelegramModeCommand): Promise<void> {
