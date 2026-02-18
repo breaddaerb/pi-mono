@@ -5,6 +5,11 @@ import type { SonderApp, SonderCommandResult } from "../app/index.js";
 import type { ParsedTelegramModeCommand } from "../commands/parse-mode-command.js";
 import { parseTelegramModeCommand } from "../commands/parse-mode-command.js";
 import { buildCallbackPayload, type CallbackAction, parseCallbackPayload } from "./telegram-callback.js";
+import {
+	handleModelSetCallback,
+	handleSessionNewCallback,
+	handleSessionResumeCallback,
+} from "./telegram-callback-handlers.js";
 import { extractUrlAndPastedText } from "./telegram-input.js";
 import { type ChatModeState, TelegramChatModeStore } from "./telegram-mode-store.js";
 import { formatCommandResult, formatPollingError, splitForTelegram, truncateMiddle } from "./telegram-renderers.js";
@@ -1007,32 +1012,21 @@ export class TelegramBotRunner {
 			}
 
 			if (payload.action === "model_set") {
-				if (!this.modelSelector) {
-					await this.api.sendMessage(chatId, "Model selector is available in codex responder mode only.");
-					return;
-				}
-				const menu = this.getModelMenu(chatId, payload.menuId);
-				if (!menu) {
-					await this.api.sendMessage(chatId, "This models menu expired. Use /models again.");
-					return;
-				}
-				const modelId = this.getModelIdByIndex(menu, payload.argument);
-				if (!modelId) {
-					await this.api.sendMessage(chatId, "Invalid model selection. Use /models again.");
-					return;
-				}
-				const changed = this.modelSelector.setSelectedModelId(modelId);
-				if (!changed) {
-					await this.api.sendMessage(chatId, "Failed to set model. Use /models again.");
-					return;
-				}
-				const modelIds = this.modelSelector.listModels().map((model) => model.id);
-				const selectedModelId = this.modelSelector.getSelectedModelId();
-				const nextMenuId = this.createModelMenu(chatId, modelIds);
-				await this.api.sendMessage(chatId, this.buildModelsMenuText(modelIds, selectedModelId), {
-					inlineKeyboard: this.buildModelsMenuKeyboard(nextMenuId, modelIds, selectedModelId),
+				const handled = await handleModelSetCallback({
+					chatId,
+					menuId: payload.menuId,
+					argument: payload.argument,
+					modelSelector: this.modelSelector,
+					getModelMenu: this.getModelMenu.bind(this),
+					getModelIdByIndex: (menu, argument) => this.getModelIdByIndex(menu as ModelMenuState, argument),
+					createModelMenu: this.createModelMenu.bind(this),
+					buildModelsMenuText: this.buildModelsMenuText.bind(this),
+					buildModelsMenuKeyboard: this.buildModelsMenuKeyboard.bind(this),
+					sendMessage: this.api.sendMessage.bind(this.api),
 				});
-				return;
+				if (handled) {
+					return;
+				}
 			}
 
 			if (
@@ -1154,42 +1148,39 @@ export class TelegramBotRunner {
 			}
 
 			if (payload.action === "sess_resume") {
-				const menu = this.getSessionMenu(chatId, payload.menuId);
-				if (!menu) {
-					await this.api.sendMessage(chatId, "This sessions menu expired. Use /sessions again.");
-					return;
-				}
-				const sessionId = this.getSessionIdByIndex(menu, payload.argument);
-				if (!sessionId) {
-					await this.api.sendMessage(chatId, "Invalid session selection. Use /sessions again.");
-					return;
-				}
-				const resumed = this.app.resumeItemDialogue(sessionId);
-				this.setChatMode(chatId, { mode: "item", itemId: resumed.itemId, sessionId: resumed.sessionId });
-				await this.sendItemModeOpenedMessage(
+				const handled = await handleSessionResumeCallback({
 					chatId,
-					"🧠 Item dialogue resumed.",
-					resumed.itemId,
-					resumed.sessionId,
-				);
-				return;
+					menuId: payload.menuId,
+					argument: payload.argument,
+					getSessionMenu: this.getSessionMenu.bind(this),
+					getSessionIdByIndex: (menu, argument) => this.getSessionIdByIndex(menu as SessionMenuState, argument),
+					resumeItemDialogue: this.app.resumeItemDialogue.bind(this.app),
+					createItemDialogue: this.app.createItemDialogue.bind(this.app),
+					setChatMode: this.setChatMode.bind(this),
+					sendItemModeOpenedMessage: this.sendItemModeOpenedMessage.bind(this),
+					sendMessage: this.api.sendMessage.bind(this.api),
+				});
+				if (handled) {
+					return;
+				}
 			}
 
 			if (payload.action === "sess_new") {
-				const menu = this.getSessionMenu(chatId, payload.menuId);
-				if (!menu) {
-					await this.api.sendMessage(chatId, "This sessions menu expired. Use /sessions again.");
+				const handled = await handleSessionNewCallback({
+					chatId,
+					menuId: payload.menuId,
+					argument: payload.argument,
+					getSessionMenu: this.getSessionMenu.bind(this),
+					getSessionIdByIndex: (menu, argument) => this.getSessionIdByIndex(menu as SessionMenuState, argument),
+					resumeItemDialogue: this.app.resumeItemDialogue.bind(this.app),
+					createItemDialogue: this.app.createItemDialogue.bind(this.app),
+					setChatMode: this.setChatMode.bind(this),
+					sendItemModeOpenedMessage: this.sendItemModeOpenedMessage.bind(this),
+					sendMessage: this.api.sendMessage.bind(this.api),
+				});
+				if (handled) {
 					return;
 				}
-				const opened = this.app.createItemDialogue(menu.itemId);
-				this.setChatMode(chatId, { mode: "item", itemId: opened.itemId, sessionId: opened.sessionId });
-				await this.sendItemModeOpenedMessage(
-					chatId,
-					"🧠 New item session started.",
-					opened.itemId,
-					opened.sessionId,
-				);
-				return;
 			}
 
 			if (
