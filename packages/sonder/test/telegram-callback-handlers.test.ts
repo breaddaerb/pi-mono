@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	type HistoryCallbackAction,
 	type HistoryCallbackContext,
+	handleContextActionCallback,
 	handleDiscoveryItemCallback,
 	handleDiscoveryMenuFilterCallback,
 	handleHistoryCallback,
@@ -236,6 +237,46 @@ function createDiscoveryMenuFilterContext(input: {
 	};
 }
 
+function createContextActionContext(input: {
+	action: "ctx_exit" | "ctx_del" | "ctx_viewer";
+	mode?:
+		| { mode: "item"; itemId: string; sessionId: string }
+		| { mode: "general"; sessionId: string; history: Array<{ role: "user" | "assistant"; content: string }> }
+		| undefined;
+	viewerUrl?: string;
+}): {
+	context: Parameters<typeof handleContextActionCallback>[0];
+	sent: SentMessage[];
+	deleted: string[];
+	clearCount: { value: number };
+} {
+	const sent: SentMessage[] = [];
+	const deleted: string[] = [];
+	const clearCount = { value: 0 };
+
+	return {
+		context: {
+			chatId: 9,
+			action: input.action,
+			getChatMode: () => input.mode,
+			clearChatMode: () => {
+				clearCount.value += 1;
+				return true;
+			},
+			deleteItemAndNotify: async (_chatId, itemId) => {
+				deleted.push(itemId);
+			},
+			getViewerItemUrl: input.viewerUrl ? (_itemId) => input.viewerUrl as string : undefined,
+			sendMessage: async (chatId, text, options) => {
+				sent.push({ chatId, text, options });
+			},
+		},
+		sent,
+		deleted,
+		clearCount,
+	};
+}
+
 describe("telegram callback handlers", () => {
 	it("handles history full callback and sends full turn content", async () => {
 		const { context, sent } = createHistoryContext({ action: "hist_full", argument: "1" });
@@ -373,5 +414,55 @@ describe("telegram callback handlers", () => {
 		expect(menuState.page).toBe(0);
 		expect(sent).toHaveLength(1);
 		expect(sent[0]?.text).toContain("page=0");
+	});
+
+	it("returns guidance when context action is invoked without active mode", async () => {
+		const { context, sent } = createContextActionContext({
+			action: "ctx_exit",
+			mode: undefined,
+		});
+		const handled = await handleContextActionCallback(context);
+
+		expect(handled).toBe(true);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]?.text).toContain("No active context");
+	});
+
+	it("handles ctx_exit by clearing active mode", async () => {
+		const { context, sent, clearCount } = createContextActionContext({
+			action: "ctx_exit",
+			mode: { mode: "item", itemId: "item-1", sessionId: "sess-1" },
+		});
+		const handled = await handleContextActionCallback(context);
+
+		expect(handled).toBe(true);
+		expect(clearCount.value).toBe(1);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]?.text).toContain("Exited active dialogue mode");
+	});
+
+	it("handles ctx_del in item mode via delete callback", async () => {
+		const { context, deleted, sent } = createContextActionContext({
+			action: "ctx_del",
+			mode: { mode: "item", itemId: "item-del", sessionId: "sess-1" },
+		});
+		const handled = await handleContextActionCallback(context);
+
+		expect(handled).toBe(true);
+		expect(deleted).toEqual(["item-del"]);
+		expect(sent).toHaveLength(0);
+	});
+
+	it("returns viewer URL for ctx_viewer in item mode", async () => {
+		const { context, sent } = createContextActionContext({
+			action: "ctx_viewer",
+			mode: { mode: "item", itemId: "item-view", sessionId: "sess-1" },
+			viewerUrl: "http://127.0.0.1:4321/viewer/items/item-view",
+		});
+		const handled = await handleContextActionCallback(context);
+
+		expect(handled).toBe(true);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]?.text).toContain("/viewer/items/item-view");
 	});
 });

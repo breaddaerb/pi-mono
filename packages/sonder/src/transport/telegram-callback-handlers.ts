@@ -41,9 +41,15 @@ interface DialogueTurnLike {
 	createdAt: string;
 }
 
+type ChatModeLike =
+	| { mode: "item"; itemId: string; sessionId: string }
+	| { mode: "general"; sessionId: string; history: Array<{ role: "user" | "assistant"; content: string }> };
+
 export type HistoryCallbackAction = "hist_prev" | "hist_next" | "hist_back" | "hist_full";
 
 export type DiscoveryItemCallbackAction = "find_open" | "find_del" | "list_open" | "list_del";
+
+export type ContextCallbackAction = "ctx_exit" | "ctx_viewer" | "ctx_del";
 
 export type DiscoveryMenuFilterAction =
 	| "menu_time"
@@ -162,6 +168,50 @@ export async function handleSessionNewCallback(context: SessionCallbackContext):
 		opened.itemId,
 		opened.sessionId,
 	);
+	return true;
+}
+
+export interface ContextActionCallbackContext {
+	chatId: number;
+	action: ContextCallbackAction;
+	getChatMode: (chatId: number) => ChatModeLike | undefined;
+	clearChatMode: (chatId: number) => boolean;
+	deleteItemAndNotify: (chatId: number, itemId: string) => Promise<void>;
+	getViewerItemUrl?: (itemId: string) => string;
+	sendMessage: MessageSender;
+}
+
+export async function handleContextActionCallback(context: ContextActionCallbackContext): Promise<boolean> {
+	const mode = context.getChatMode(context.chatId);
+	if (!mode) {
+		await context.sendMessage(context.chatId, "No active context. Use /find or /list, then open an item.");
+		return true;
+	}
+
+	if (context.action === "ctx_exit") {
+		context.clearChatMode(context.chatId);
+		await context.sendMessage(context.chatId, "Exited active dialogue mode.");
+		return true;
+	}
+
+	if (context.action === "ctx_del") {
+		if (mode.mode !== "item") {
+			await context.sendMessage(context.chatId, "Delete is available in item mode only.");
+			return true;
+		}
+		await context.deleteItemAndNotify(context.chatId, mode.itemId);
+		return true;
+	}
+
+	if (mode.mode !== "item") {
+		await context.sendMessage(context.chatId, "Viewer is available in item mode only.");
+		return true;
+	}
+	if (!context.getViewerItemUrl) {
+		await context.sendMessage(context.chatId, "Viewer is not enabled for this run.");
+		return true;
+	}
+	await context.sendMessage(context.chatId, context.getViewerItemUrl(mode.itemId));
 	return true;
 }
 

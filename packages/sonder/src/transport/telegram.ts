@@ -4,8 +4,9 @@ import { type Dispatcher, ProxyAgent, fetch as undiciFetch } from "undici";
 import type { SonderApp, SonderCommandResult } from "../app/index.js";
 import type { ParsedTelegramModeCommand } from "../commands/parse-mode-command.js";
 import { parseTelegramModeCommand } from "../commands/parse-mode-command.js";
-import { buildCallbackPayload, type CallbackAction, parseCallbackPayload } from "./telegram-callback.js";
+import { buildCallbackPayload, parseCallbackPayload } from "./telegram-callback.js";
 import {
+	handleContextActionCallback,
 	handleDiscoveryItemCallback,
 	handleDiscoveryMenuFilterCallback,
 	handleHistoryCallback,
@@ -967,41 +968,6 @@ export class TelegramBotRunner {
 		await this.api.sendMessage(chatId, "Item deleted (including annotations, dialogue, and artifacts).");
 	}
 
-	private async handleContextAction(chatId: number, action: CallbackAction): Promise<void> {
-		const mode = this.getChatMode(chatId);
-		if (!mode) {
-			await this.api.sendMessage(chatId, "No active context. Use /find or /list, then open an item.");
-			return;
-		}
-
-		if (action === "ctx_exit") {
-			this.clearChatMode(chatId);
-			await this.api.sendMessage(chatId, "Exited active dialogue mode.");
-			return;
-		}
-
-		if (action === "ctx_del") {
-			if (mode.mode !== "item") {
-				await this.api.sendMessage(chatId, "Delete is available in item mode only.");
-				return;
-			}
-			await this.deleteItemAndNotify(chatId, mode.itemId);
-			return;
-		}
-
-		if (action === "ctx_viewer") {
-			if (mode.mode !== "item") {
-				await this.api.sendMessage(chatId, "Viewer is available in item mode only.");
-				return;
-			}
-			if (!this.getViewerItemUrl) {
-				await this.api.sendMessage(chatId, "Viewer is not enabled for this run.");
-				return;
-			}
-			await this.api.sendMessage(chatId, this.getViewerItemUrl(mode.itemId));
-		}
-	}
-
 	private async handleCallback(chatId: number, callbackQueryId: string, data: string): Promise<void> {
 		try {
 			const payload = parseCallbackPayload(data);
@@ -1010,8 +976,26 @@ export class TelegramBotRunner {
 				return;
 			}
 			if (payload.action.startsWith("ctx_")) {
-				await this.handleContextAction(chatId, payload.action);
-				return;
+				const contextAction =
+					payload.action === "ctx_exit" || payload.action === "ctx_del" || payload.action === "ctx_viewer"
+						? payload.action
+						: null;
+				if (!contextAction) {
+					await this.api.sendMessage(chatId, "Unsupported action. Use /open or /find again.");
+					return;
+				}
+				const handled = await handleContextActionCallback({
+					chatId,
+					action: contextAction,
+					getChatMode: this.getChatMode.bind(this),
+					clearChatMode: this.clearChatMode.bind(this),
+					deleteItemAndNotify: this.deleteItemAndNotify.bind(this),
+					getViewerItemUrl: this.getViewerItemUrl,
+					sendMessage: this.api.sendMessage.bind(this.api),
+				});
+				if (handled) {
+					return;
+				}
 			}
 
 			if (payload.action === "model_set") {
