@@ -6,6 +6,7 @@ import type { ParsedTelegramModeCommand } from "../commands/parse-mode-command.j
 import { parseTelegramModeCommand } from "../commands/parse-mode-command.js";
 import { buildCallbackPayload, type CallbackAction, parseCallbackPayload } from "./telegram-callback.js";
 import {
+	handleHistoryCallback,
 	handleModelSetCallback,
 	handleSessionNewCallback,
 	handleSessionResumeCallback,
@@ -1189,48 +1190,23 @@ export class TelegramBotRunner {
 				payload.action === "hist_back" ||
 				payload.action === "hist_full"
 			) {
-				const menu = this.getHistoryMenu(chatId, payload.menuId);
-				if (!menu) {
-					await this.api.sendMessage(chatId, "This history menu expired. Use /history again.");
-					return;
-				}
-				if (payload.action === "hist_back") {
-					await this.api.sendMessage(chatId, "Back to item dialogue. Send your next message.");
-					return;
-				}
-				if (payload.action === "hist_full") {
-					const index = Number.parseInt(payload.argument, 10);
-					if (!Number.isFinite(index) || index <= 0) {
-						await this.api.sendMessage(chatId, "Invalid history selection. Use /history again.");
-						return;
-					}
-					const turns = this.app.listDialogueHistory(menu.sessionId, 200);
-					const totalPages = Math.max(1, Math.ceil(turns.length / menu.pageSize));
-					const safePage = Math.max(0, Math.min(menu.page, totalPages - 1));
-					const start = safePage * menu.pageSize;
-					const turn = turns.slice(start, start + menu.pageSize)[index - 1];
-					if (!turn) {
-						await this.api.sendMessage(chatId, "History turn not found on this page.");
-						return;
-					}
-					const fullContent = turn.content || (turn.status === "failed" ? "(assistant turn failed)" : "(empty)");
-					const statusLine = `Status: ${turn.status}`;
-					const errorLine = turn.errorMessage ? `\nError: ${turn.errorMessage}` : "";
-					const fullText = `History turn ${index} (page ${safePage + 1})\nRole: ${turn.role}\n${statusLine}${errorLine}\nTime: ${formatDisplayTime(turn.createdAt)}\n\n${fullContent}`;
-					for (const chunk of splitForTelegram(fullText)) {
-						await this.api.sendMessage(chatId, chunk);
-					}
-					return;
-				}
-				const currentPage = this.getHistoryPage(menu.sessionId, menu.page, menu.pageSize);
-				const direction = payload.action === "hist_prev" ? -1 : 1;
-				const clampedNextPage = Math.max(0, Math.min(currentPage.safePage + direction, currentPage.totalPages - 1));
-				const nextMenuId = this.createHistoryMenu(chatId, menu.sessionId, clampedNextPage, menu.pageSize);
-				const historyPage = this.getHistoryPage(menu.sessionId, clampedNextPage, menu.pageSize);
-				await this.api.sendMessage(chatId, historyPage.text, {
-					inlineKeyboard: this.buildHistoryKeyboard(nextMenuId, historyPage.pageTurnsCount),
+				const handled = await handleHistoryCallback({
+					chatId,
+					menuId: payload.menuId,
+					action: payload.action,
+					argument: payload.argument,
+					getHistoryMenu: this.getHistoryMenu.bind(this),
+					listDialogueHistory: this.app.listDialogueHistory.bind(this.app),
+					getHistoryPage: this.getHistoryPage.bind(this),
+					createHistoryMenu: this.createHistoryMenu.bind(this),
+					buildHistoryKeyboard: this.buildHistoryKeyboard.bind(this),
+					formatDisplayTime,
+					splitForTelegram,
+					sendMessage: this.api.sendMessage.bind(this.api),
 				});
-				return;
+				if (handled) {
+					return;
+				}
 			}
 
 			const menu = this.getItemMenu(chatId, payload.menuId);
