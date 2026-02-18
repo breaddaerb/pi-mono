@@ -227,24 +227,30 @@ describe("viewer server", () => {
 			const page = await pageResponse.text();
 			expect(page).toContain("Highlight");
 			expect(page).toContain("Add notes from each annotation card");
-			expect(page).toContain("focusAnnotation");
-			expect(page).toContain("annotation-active");
-			expect(page).toContain("annotation-topline");
-			expect(page).toContain("annotation-status");
-			expect(page).toContain("sonder-overlay-status");
 			expect(page).toContain('class="side-top"');
 			expect(page).toContain('class="ann-scroll"');
 			expect(page).toContain('data-filter-kind="highlight"');
 			expect(page).toContain('data-filter-kind="unresolved"');
-			expect(page).toContain("Repair anchor");
-			expect(page).toContain("annotation-note-editor");
-			expect(page).toContain("Save note");
-			expect(page).toContain("Asia/Shanghai");
-			expect(page).toContain("formatDisplayTime");
-			expect(page).toContain("replace(/\\s+/g, ' ')");
-			expect(page).not.toContain("replace(/s+/g, ' ')");
+			expect(page).toContain("window.__sonderItemId");
+			expect(page).toContain("/viewer/static/client.js");
 			expect(page).not.toContain("Add note for this annotation");
 			expect(page).not.toContain("btnNote");
+
+			const clientScriptResponse = await fetch(`${viewer.baseUrl}/viewer/static/client.js`);
+			expect(clientScriptResponse.status).toBe(200);
+			const clientScript = await clientScriptResponse.text();
+			expect(clientScript).toContain("focusAnnotation");
+			expect(clientScript).toContain("annotation-active");
+			expect(clientScript).toContain("annotation-topline");
+			expect(clientScript).toContain("annotation-status");
+			expect(clientScript).toContain("sonder-overlay-status");
+			expect(clientScript).toContain("Repair anchor");
+			expect(clientScript).toContain("annotation-note-editor");
+			expect(clientScript).toContain("Save note");
+			expect(clientScript).toContain("Asia/Shanghai");
+			expect(clientScript).toContain("formatDisplayTime");
+			expect(clientScript).toContain("replace(/\\s+/g, ' ')");
+			expect(clientScript).not.toContain("replace(/s+/g, ' ')");
 
 			const snapshotResponse = await fetch(`${viewer.baseUrl}/viewer/items/item_view/snapshot`);
 			expect(snapshotResponse.status).toBe(200);
@@ -261,7 +267,7 @@ describe("viewer server", () => {
 			expect(snapshotHtml).not.toContain("onclick=");
 			expect(snapshotHtml).not.toContain("onerror=");
 			expect(snapshotHtml).not.toContain('href="javascript:');
-			expect(page).toContain("iframe.style.visibility = 'hidden'");
+			expect(clientScript).toContain("iframe.style.visibility = 'hidden'");
 
 			const createResponse = await fetch(`${viewer.baseUrl}/viewer/api/items/item_view/annotations`, {
 				method: "POST",
