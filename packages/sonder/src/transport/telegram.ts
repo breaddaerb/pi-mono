@@ -1610,10 +1610,27 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 			reject(new Error("Aborted"));
 			return;
 		}
-		const timeout = setTimeout(resolve, ms);
-		signal?.addEventListener("abort", () => {
+
+		let settled = false;
+		const onAbort = () => {
+			if (settled) {
+				return;
+			}
+			settled = true;
 			clearTimeout(timeout);
+			signal?.removeEventListener("abort", onAbort);
 			reject(new Error("Aborted"));
-		});
+		};
+
+		const timeout = setTimeout(() => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+
+		signal?.addEventListener("abort", onAbort, { once: true });
 	});
 }

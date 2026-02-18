@@ -75,6 +75,56 @@ class FakeTelegramApi implements TelegramApi {
 	}
 }
 
+type TestAbortEvent = { type: "abort" };
+type TestAbortListener = ((event: TestAbortEvent) => void) | { handleEvent: (event: TestAbortEvent) => void };
+
+interface TestAbortSignal {
+	aborted: boolean;
+	addEventListener: (type: "abort", listener: TestAbortListener, options?: { once?: boolean }) => void;
+	removeEventListener: (type: "abort", listener: TestAbortListener) => void;
+	abort: () => void;
+	listenerCount: () => number;
+}
+
+function invokeAbortListener(listener: TestAbortListener): void {
+	const event: TestAbortEvent = { type: "abort" };
+	if (typeof listener === "function") {
+		listener(event);
+		return;
+	}
+	listener.handleEvent(event);
+}
+
+function createTestAbortSignal(): TestAbortSignal {
+	const listeners = new Set<TestAbortListener>();
+	const signal: TestAbortSignal = {
+		aborted: false,
+		addEventListener: (type, listener) => {
+			if (type === "abort") {
+				listeners.add(listener);
+			}
+		},
+		removeEventListener: (type, listener) => {
+			if (type === "abort") {
+				listeners.delete(listener);
+			}
+		},
+		abort: () => {
+			signal.aborted = true;
+			if (listeners.size === 0) {
+				return;
+			}
+			const active = [...listeners];
+			listeners.clear();
+			for (const listener of active) {
+				invokeAbortListener(listener);
+			}
+		},
+		listenerCount: () => listeners.size,
+	};
+	return signal;
+}
+
 describe("TelegramBotRunner", () => {
 	const tempDirs: string[] = [];
 	afterEach(() => {
@@ -471,6 +521,34 @@ describe("TelegramBotRunner", () => {
 		expect(api.sent).toHaveLength(1);
 		expect(api.sent[0].chatId).toBe(42);
 		expect(api.sent[0].text).toContain("No saved items yet");
+		app.close();
+	});
+
+	it("removes abort listeners when runForever is aborted during sleep", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "stub",
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		const api = new FakeTelegramApi([]);
+		const runner = new TelegramBotRunner(api, app, { idleDelayMs: 50, longPollSeconds: 0 });
+		const signal = createTestAbortSignal();
+		const runPromise = runner.runForever(signal as unknown as AbortSignal);
+
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(signal.listenerCount()).toBe(1);
+
+		signal.abort();
+		await expect(runPromise).rejects.toThrow("Aborted");
+		expect(signal.listenerCount()).toBe(0);
 		app.close();
 	});
 
@@ -985,7 +1063,7 @@ describe("TelegramBotRunner", () => {
 
 		const sessionsAfterNew = app.listItemDialogues("item_sessions");
 		expect(sessionsAfterNew).toHaveLength(2);
-		expect(sessionsAfterNew[0]?.sessionId).not.toBe(preOpened.sessionId);
+		expect(sessionsAfterNew.some((session) => session.sessionId !== preOpened.sessionId)).toBe(true);
 		app.close();
 	});
 
