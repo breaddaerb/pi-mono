@@ -7,6 +7,7 @@ import { parseTelegramModeCommand } from "../commands/parse-mode-command.js";
 import { buildCallbackPayload, type CallbackAction, parseCallbackPayload } from "./telegram-callback.js";
 import {
 	handleDiscoveryItemCallback,
+	handleDiscoveryMenuFilterCallback,
 	handleHistoryCallback,
 	handleModelSetCallback,
 	handleSessionNewCallback,
@@ -1046,107 +1047,34 @@ export class TelegramBotRunner {
 				payload.action === "menu_prev" ||
 				payload.action === "menu_next"
 			) {
-				const menu = this.getItemMenu(chatId, payload.menuId);
-				if (!menu) {
-					await this.api.sendMessage(chatId, "This menu expired. Use /list or /find again.");
+				const handled = await handleDiscoveryMenuFilterCallback({
+					chatId,
+					menuId: payload.menuId,
+					action: payload.action,
+					argument: payload.argument,
+					getItemMenu: this.getItemMenu.bind(this),
+					collectMenuTags: (menu) => this.collectMenuTags(menu as ItemMenuState),
+					buildTimeMenuKeyboard: this.buildTimeMenuKeyboard.bind(this),
+					buildSourceMenuKeyboard: this.buildSourceMenuKeyboard.bind(this),
+					buildSortMenuKeyboard: this.buildSortMenuKeyboard.bind(this),
+					buildTagMenuKeyboard: (menuId, menu) => this.buildTagMenuKeyboard(menuId, menu as ItemMenuState),
+					buildMenuBackKeyboard: (menuId) => [
+						[{ text: "Back", callbackData: buildCallbackPayload("menu_back", menuId, 0) }],
+					],
+					parseTimeFilter: this.parseTimeFilter.bind(this),
+					parseSourceFilter: this.parseSourceFilter.bind(this),
+					parseSortFilter: this.parseSortFilter.bind(this),
+					parseTagSelection: (menu, argument) => this.parseTagSelection(menu as ItemMenuState, argument),
+					parseTagPage: this.parseTagPage.bind(this),
+					pagedMenuEntries: (menu) => this.pagedMenuEntries(menu as ItemMenuState),
+					buildDiscoveryMenuText: (menu) => this.buildDiscoveryMenuText(menu as ItemMenuState),
+					buildDiscoveryMenuKeyboard: (menuId, menu) =>
+						this.buildDiscoveryMenuKeyboard(menuId, menu as ItemMenuState),
+					sendMessage: this.api.sendMessage.bind(this.api),
+				});
+				if (handled) {
 					return;
 				}
-
-				if (payload.action === "menu_time") {
-					await this.api.sendMessage(chatId, "Select time filter", {
-						inlineKeyboard: this.buildTimeMenuKeyboard(payload.menuId),
-					});
-					return;
-				}
-				if (payload.action === "menu_source") {
-					await this.api.sendMessage(chatId, "Select source filter", {
-						inlineKeyboard: this.buildSourceMenuKeyboard(payload.menuId),
-					});
-					return;
-				}
-				if (payload.action === "menu_tag") {
-					menu.tagPage = 0;
-					const tags = this.collectMenuTags(menu);
-					if (tags.length === 0) {
-						await this.api.sendMessage(chatId, "No tags available for this menu.", {
-							inlineKeyboard: [
-								[{ text: "Back", callbackData: buildCallbackPayload("menu_back", payload.menuId, 0) }],
-							],
-						});
-						return;
-					}
-					await this.api.sendMessage(chatId, "Select tag filter", {
-						inlineKeyboard: this.buildTagMenuKeyboard(payload.menuId, menu),
-					});
-					return;
-				}
-				if (payload.action === "menu_sort") {
-					await this.api.sendMessage(chatId, "Select sort order", {
-						inlineKeyboard: this.buildSortMenuKeyboard(payload.menuId),
-					});
-					return;
-				}
-				if (payload.action === "menu_time_set") {
-					const next = this.parseTimeFilter(payload.argument);
-					if (next) {
-						menu.time = next;
-						menu.page = 0;
-					}
-				}
-				if (payload.action === "menu_source_set") {
-					const next = this.parseSourceFilter(payload.argument);
-					if (next) {
-						menu.source = next;
-						menu.page = 0;
-					}
-				}
-				if (payload.action === "menu_sort_set") {
-					const next = this.parseSortFilter(payload.argument);
-					if (next) {
-						menu.sort = next;
-						menu.page = 0;
-					}
-				}
-				if (payload.action === "menu_tag_set") {
-					if (payload.argument === "0") {
-						menu.tag = null;
-					} else {
-						menu.tag = this.parseTagSelection(menu, payload.argument);
-					}
-					menu.page = 0;
-					menu.tagPage = 0;
-				}
-				if (payload.action === "menu_tag_page") {
-					const tags = this.collectMenuTags(menu);
-					const totalPages = Math.max(1, Math.ceil(tags.length / 6));
-					menu.tagPage = this.parseTagPage(payload.argument, totalPages);
-					await this.api.sendMessage(chatId, "Select tag filter", {
-						inlineKeyboard: this.buildTagMenuKeyboard(payload.menuId, menu),
-					});
-					return;
-				}
-				if (payload.action === "menu_clear") {
-					menu.time = "all";
-					menu.source = "any";
-					menu.tag = null;
-					menu.sort = "newest";
-					menu.page = 0;
-					menu.tagPage = 0;
-				}
-				if (payload.action === "menu_prev" || payload.action === "menu_next") {
-					const pageInfo = this.pagedMenuEntries(menu);
-					if (pageInfo.totalPages <= 1) {
-						menu.page = 0;
-					} else if (payload.action === "menu_next") {
-						menu.page = (pageInfo.page + 1) % pageInfo.totalPages;
-					} else {
-						menu.page = (pageInfo.page - 1 + pageInfo.totalPages) % pageInfo.totalPages;
-					}
-				}
-				const responseText = this.buildDiscoveryMenuText(menu);
-				const keyboard = this.buildDiscoveryMenuKeyboard(payload.menuId, menu);
-				await this.api.sendMessage(chatId, responseText, { inlineKeyboard: keyboard });
-				return;
 			}
 
 			if (payload.action === "sess_resume") {
