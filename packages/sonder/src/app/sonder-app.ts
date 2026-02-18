@@ -1,15 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { type ParseTelegramCommandError, parseTelegramCommand } from "../commands/parse-command.js";
 import { type AskResponder, AskService } from "../runtime/ask-service.js";
-import {
-	captureFromSource,
-	type SourceAcquisitionMethod,
-	type SourcePlatform,
-	type SourceStatus,
-} from "../sources/index.js";
 import { cleanExtractedTextForPlatform, detectSourcePlatform } from "../sources/utils.js";
 import {
 	AnnotationsRepo,
@@ -21,7 +15,14 @@ import {
 	ItemsRepo,
 	type StoredChatModeState,
 } from "../storage/index.js";
-import type { Annotation, Artifact, DialogueTurnStatus, Item, ItemSourceType } from "../types.js";
+import type { Annotation, DialogueTurnStatus, Item, ItemSourceType } from "../types.js";
+import {
+	type SaveEvidenceType,
+	SaveService,
+	type SaveSourceAcquisitionMethod,
+	type SaveSourcePlatform,
+	type SaveSourceStatus,
+} from "./save-service.js";
 
 export interface SonderDialogueSessionInfo {
 	itemId: string;
@@ -103,13 +104,13 @@ export interface SonderFindItem {
 	snippets: string[];
 }
 
-export type SonderSaveSourceStatus = SourceStatus;
+export type SonderSaveSourceStatus = SaveSourceStatus;
 
-export type SonderSaveAcquisitionMethod = SourceAcquisitionMethod;
+export type SonderSaveAcquisitionMethod = SaveSourceAcquisitionMethod;
 
-export type SonderSourcePlatform = SourcePlatform;
+export type SonderSourcePlatform = SaveSourcePlatform;
 
-export type SonderEvidenceType = "snapshot" | "pasted_text" | "fallback_text";
+export type SonderEvidenceType = SaveEvidenceType;
 
 export type SonderCommandResult =
 	| {
@@ -172,6 +173,7 @@ export class SonderApp {
 	readonly dataRootDir: string;
 	private readonly responder: AskResponder;
 	private readonly chatModeStateRepo: ChatModeStateRepo;
+	private readonly saveService: SaveService;
 
 	constructor(private readonly options: SonderAppOptions) {
 		const databasePath = options.paths.databasePath ?? join(options.paths.rootDir, "sonder.sqlite");
@@ -195,6 +197,14 @@ export class SonderApp {
 			},
 			{ persistThinking: options.persistThinking, now: options.now },
 		);
+		this.saveService = new SaveService({
+			database: this.database,
+			itemsRepo: this.itemsRepo,
+			artifactsRepo: this.artifactsRepo,
+			dataRootDir: this.dataRootDir,
+			now: options.now,
+			snapshotFetchImpl: options.snapshotFetchImpl,
+		});
 	}
 
 	openItemDialogue(itemId: string, preferredSessionId?: string): SonderDialogueSessionInfo {
@@ -420,7 +430,15 @@ export class SonderApp {
 		tags?: string[];
 		pastedText?: string | null;
 	}): Promise<Extract<SonderCommandResult, { type: "save" }>> {
-		return this.handleSave(input.url, input.tags ?? [], input.pastedText ?? null);
+		const saved = await this.saveService.save({
+			url: input.url,
+			tags: input.tags ?? [],
+			pastedText: input.pastedText ?? null,
+		});
+		return {
+			type: "save",
+			...saved,
+		};
 	}
 
 	async processCommand(input: string): Promise<SonderProcessResult> {
@@ -431,7 +449,11 @@ export class SonderApp {
 
 		try {
 			if (parsed.value.type === "save") {
-				const result = await this.handleSave(parsed.value.url, parsed.value.tags, parsed.value.pastedText);
+				const result = await this.saveFromInput({
+					url: parsed.value.url,
+					tags: parsed.value.tags,
+					pastedText: parsed.value.pastedText,
+				});
 				return { ok: true, value: result };
 			}
 			if (parsed.value.type === "list") {
@@ -516,131 +538,6 @@ export class SonderApp {
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			return { ok: false, error: { code: "RUNTIME_ERROR", message } };
-		}
-	}
-
-	private async handleSave(
-		url: string,
-		tags: string[],
-		pastedText: string | null,
-	): Promise<Extract<SonderCommandResult, { type: "save" }>> {
-		const now = (this.options.now ?? (() => new Date()))().toISOString();
-		const itemId = randomUUID();
-		const item: Item = {
-			id: itemId,
-			createdAt: now,
-			sourceType: "web",
-			originalUrl: url,
-			whyNote: null,
-			tags,
-			topic: null,
-			space: null,
-		};
-		const itemDirectory = join(this.dataRootDir, "items", itemId);
-		try {
-			const sourceCapture = await captureFromSource({
-				itemId,
-				url,
-				dataRootDir: this.dataRootDir,
-				fetchImpl: this.options.snapshotFetchImpl,
-			});
-			const snapshot = sourceCapture.snapshot;
-			const acquisitionReportPath = join(snapshot.itemDirectory, "acquisition-report.json");
-			writeFileSync(
-				acquisitionReportPath,
-				JSON.stringify(
-					{
-						itemId,
-						inputUrl: url,
-						platform: sourceCapture.platform,
-						winnerMethod: sourceCapture.acquisitionMethod,
-						winnerStatus: sourceCapture.status,
-						attempts: sourceCapture.attempts,
-					},
-					null,
-					2,
-				),
-				"utf8",
-			);
-
-			const normalizedPastedText = this.normalizePastedText(pastedText);
-			const autoDerivedEvidenceText = this.deriveAutoEvidenceText({
-				platform: sourceCapture.platform,
-				usable: sourceCapture.usable,
-				extractedTextPath: snapshot.extractedTextPath,
-			});
-			const effectiveEvidenceText = normalizedPastedText ?? autoDerivedEvidenceText;
-			const usePastedEvidence =
-				Boolean(effectiveEvidenceText) &&
-				(!sourceCapture.usable || this.shouldPreferPastedEvidenceForPlatform(sourceCapture.platform));
-			let extractedTextPath = snapshot.extractedTextPath;
-			let evidenceMdPath: string | null = null;
-			if (usePastedEvidence && effectiveEvidenceText) {
-				evidenceMdPath = join(snapshot.itemDirectory, "evidence.md");
-				extractedTextPath = join(snapshot.itemDirectory, "evidence-extracted.txt");
-				writeFileSync(evidenceMdPath, effectiveEvidenceText, "utf8");
-				writeFileSync(extractedTextPath, effectiveEvidenceText, "utf8");
-			}
-
-			const artifactsToPersist: Artifact[] = [];
-			artifactsToPersist.push(
-				this.createArtifact(itemId, "snapshot-assets", snapshot.snapshotAssetsDirectory, "application/json"),
-			);
-			artifactsToPersist.push(this.createArtifact(itemId, "extracted-text", extractedTextPath, "text/plain"));
-			artifactsToPersist.push(
-				this.createArtifact(itemId, "acquisition-report", acquisitionReportPath, "application/json"),
-			);
-
-			if (snapshot.snapshotHtmlPath && !usePastedEvidence) {
-				artifactsToPersist.push(
-					this.createArtifact(itemId, "snapshot-html", snapshot.snapshotHtmlPath, "text/html"),
-				);
-			}
-
-			if (evidenceMdPath) {
-				artifactsToPersist.push(this.createArtifact(itemId, "evidence-md", evidenceMdPath, "text/markdown"));
-			}
-
-			if (snapshot.screenshotFallbackPath && !usePastedEvidence) {
-				artifactsToPersist.push(
-					this.createArtifact(itemId, "screenshot-fallback", snapshot.screenshotFallbackPath, "text/plain"),
-				);
-			}
-
-			this.withTransaction(() => {
-				this.itemsRepo.create(item);
-				for (const artifact of artifactsToPersist) {
-					this.artifactsRepo.create(artifact);
-				}
-			});
-
-			const sourcePlatform = sourceCapture.platform;
-			const sourceAcquisitionMethod = sourceCapture.acquisitionMethod;
-			const sourceStatus = sourceCapture.status;
-			const sourceStatusReason = sourceCapture.reasonHint ?? sourceCapture.reason;
-			const evidenceType: SonderEvidenceType = usePastedEvidence
-				? "pasted_text"
-				: sourceCapture.usable
-					? "snapshot"
-					: "fallback_text";
-
-			return {
-				type: "save",
-				itemId,
-				usedFallback: snapshot.usedFallback,
-				artifactIds: artifactsToPersist.map((artifact) => artifact.id),
-				url,
-				tags,
-				sourcePlatform,
-				sourceAcquisitionMethod,
-				sourceStatus,
-				sourceStatusReason,
-				evidenceType,
-				needsUserEvidence: !sourceCapture.usable && !usePastedEvidence,
-			};
-		} catch (error) {
-			rmSync(itemDirectory, { recursive: true, force: true });
-			throw error;
 		}
 	}
 
@@ -801,53 +698,6 @@ export class SonderApp {
 		return suffixed.length <= 100 ? suffixed : `${suffixed.slice(0, 97)}...`;
 	}
 
-	private shouldPreferPastedEvidenceForPlatform(platform: SonderSourcePlatform): boolean {
-		return platform === "twitter" || platform === "wechat";
-	}
-
-	private normalizePastedText(text: string | null): string | null {
-		if (!text) {
-			return null;
-		}
-		const normalized = text.replace(/\r\n/g, "\n").trim();
-		return normalized.length > 0 ? normalized : null;
-	}
-
-	private deriveAutoEvidenceText(input: {
-		platform: SonderSourcePlatform;
-		usable: boolean;
-		extractedTextPath: string;
-	}): string | null {
-		if (input.usable) {
-			return null;
-		}
-		if (input.platform !== "xiaohongshu") {
-			return null;
-		}
-		try {
-			const rawText = readFileSync(input.extractedTextPath, "utf8");
-			const cleaned = cleanExtractedTextForPlatform(input.platform, rawText).trim();
-			if (cleaned.length >= 60) {
-				return cleaned;
-			}
-			const fallbackCleaned = rawText
-				.replaceAll(/沪ICP备\d+号?|沪B2-\d+|网信算备\d+号|沪网文\(\d{4}\)\d+-\d+号/gi, " ")
-				.replaceAll(/\(沪\)网械平台备字\[\d{4}\]第\d+号|\(沪\)-经营性-\d{4}-\d+/gi, " ")
-				.replaceAll(/上海市互联网举报中心|网上有害信息举报专区|行吟信息科技（上海）有限公司/gi, " ")
-				.replaceAll(/地址：上海市黄浦区马当路388号C座|电话：\d+-\d+/gi, " ")
-				.replaceAll(/©\s*\d{4}\s*-\s*\d{4}/gi, " ")
-				.replaceAll(/小红书|创作中心|业务合作|发现|发布|通知|登录|更多/gi, " ")
-				.replaceAll(/\s+/g, " ")
-				.trim();
-			if (fallbackCleaned.length < 60) {
-				return null;
-			}
-			return fallbackCleaned;
-		} catch {
-			return null;
-		}
-	}
-
 	private readExtractedTextForItem(item: Item): string {
 		const artifact = this.artifactsRepo
 			.listByItemId(item.id)
@@ -899,31 +749,6 @@ export class SonderApp {
 			tags: annotation.tags,
 			anchor: annotation.anchor,
 			createdAt: annotation.createdAt,
-		};
-	}
-
-	private withTransaction<T>(action: () => T): T {
-		this.database.exec("BEGIN IMMEDIATE TRANSACTION;");
-		try {
-			const result = action();
-			this.database.exec("COMMIT;");
-			return result;
-		} catch (error) {
-			this.database.exec("ROLLBACK;");
-			throw error;
-		}
-	}
-
-	private createArtifact(itemId: string, kind: Artifact["kind"], path: string, mimeType: string): Artifact {
-		const now = (this.options.now ?? (() => new Date()))().toISOString();
-		return {
-			id: randomUUID(),
-			itemId,
-			kind,
-			path,
-			mimeType,
-			version: 1,
-			createdAt: now,
 		};
 	}
 }
