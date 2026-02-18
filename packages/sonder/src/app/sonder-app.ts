@@ -207,6 +207,16 @@ export class SonderApp {
 		};
 	}
 
+	createItemDialogue(itemId: string): SonderDialogueSessionInfo {
+		this.ensureItemExists(itemId);
+		const created = this.askService.createSession(itemId);
+		return {
+			itemId,
+			sessionId: created.sessionId,
+			created: true,
+		};
+	}
+
 	listItemDialogues(itemId: string): Array<{ sessionId: string; createdAt: string; title: string }> {
 		this.ensureItemExists(itemId);
 		return this.dialogueRepo.listSessionsByItemId(itemId).map((session) => ({

@@ -1181,7 +1181,7 @@ export class TelegramBotRunner {
 					await this.api.sendMessage(chatId, "This sessions menu expired. Use /sessions again.");
 					return;
 				}
-				const opened = this.app.openItemDialogue(menu.itemId);
+				const opened = this.app.createItemDialogue(menu.itemId);
 				this.setChatMode(chatId, { mode: "item", itemId: opened.itemId, sessionId: opened.sessionId });
 				await this.sendItemModeOpenedMessage(
 					chatId,

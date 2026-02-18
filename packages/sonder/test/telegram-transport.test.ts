@@ -957,6 +957,7 @@ describe("TelegramBotRunner", () => {
 
 		const preOpened = app.openItemDialogue("item_sessions");
 		await app.askInItemDialogue("item_sessions", preOpened.sessionId, "first turn");
+		expect(app.listItemDialogues("item_sessions")).toHaveLength(1);
 
 		const api = new FakeTelegramApi([
 			{ updateId: 1, type: "message", chatId: 26, text: "/open item_sessions" },
@@ -980,6 +981,11 @@ describe("TelegramBotRunner", () => {
 
 		expect(api.sent[2].text).toContain("Item dialogue resumed");
 		expect(api.sent[3].text).toContain("New item session started");
+		expect(api.sent[3].text).toContain("0 turns");
+
+		const sessionsAfterNew = app.listItemDialogues("item_sessions");
+		expect(sessionsAfterNew).toHaveLength(2);
+		expect(sessionsAfterNew[0]?.sessionId).not.toBe(preOpened.sessionId);
 		app.close();
 	});
 

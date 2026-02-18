@@ -164,6 +164,15 @@ export class AskService {
 		return { sessionId: session.id, created };
 	}
 
+	createSession(itemId: string): EnsureSessionResult {
+		const item = this.dependencies.itemsRepo.findById(itemId);
+		if (!item) {
+			throw new Error(`Item not found: ${itemId}`);
+		}
+		const session = this.createSessionRecord(itemId);
+		return { sessionId: session.id, created: true };
+	}
+
 	private getOrCreateSession(
 		itemId: string,
 		preferredSessionId?: string,
@@ -184,6 +193,11 @@ export class AskService {
 			return { session: existing, created: false };
 		}
 
+		const session = this.createSessionRecord(itemId);
+		return { session, created: true };
+	}
+
+	private createSessionRecord(itemId: string): DialogueSession {
 		const session: DialogueSession = {
 			id: randomUUID(),
 			itemId,
@@ -191,7 +205,7 @@ export class AskService {
 			createdAt: this.now().toISOString(),
 		};
 		this.dependencies.dialogueRepo.createSession(session);
-		return { session, created: true };
+		return session;
 	}
 
 	private createTurn(input: Omit<DialogueTurn, "id" | "createdAt">): DialogueTurn {
