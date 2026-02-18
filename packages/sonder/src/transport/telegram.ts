@@ -19,6 +19,7 @@ import {
 	type SourceFilter,
 	type TimeFilter,
 } from "./telegram-discovery-filters.js";
+import { formatDisplayTime } from "./telegram-display-time.js";
 import { extractUrlAndPastedText } from "./telegram-input.js";
 import { handleModeCommand as handleModeCommandCore } from "./telegram-mode-command-handler.js";
 import { type ChatModeState, TelegramChatModeStore } from "./telegram-mode-store.js";
@@ -255,25 +256,6 @@ export class TelegramHttpApi implements TelegramApi {
 }
 
 const FIND_MENU_TTL_MS = 15 * 60 * 1000;
-const DISPLAY_TIME_ZONE = "Asia/Shanghai";
-const DISPLAY_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
-	timeZone: DISPLAY_TIME_ZONE,
-	year: "numeric",
-	month: "2-digit",
-	day: "2-digit",
-	hour: "2-digit",
-	minute: "2-digit",
-	second: "2-digit",
-	hour12: false,
-});
-
-function formatDisplayTime(timestamp: string): string {
-	const parsed = Date.parse(timestamp);
-	if (!Number.isFinite(parsed)) {
-		return timestamp;
-	}
-	return `${DISPLAY_TIME_FORMATTER.format(parsed)} (UTC+8)`;
-}
 
 type MenuKind = "find" | "list";
 
