@@ -139,4 +139,39 @@ describe("telegram callback router", () => {
 		expect(state.opened).toHaveLength(1);
 		expect(state.opened[0]?.header).toContain("opened from result #1");
 	});
+
+	it("routes model_set callbacks via action registry", async () => {
+		const state = createRouterContext({
+			data: buildCallbackPayload("model_set", "menu-model", 1),
+		});
+		await routeTelegramCallback(state.context);
+
+		expect(state.sent).toHaveLength(1);
+		expect(state.sent[0]?.text).toContain("codex responder mode only");
+	});
+
+	it("routes menu filter callbacks via action registry", async () => {
+		const menu: ItemMenuStateLike = {
+			kind: "find",
+			page: 0,
+			pageSize: 5,
+			time: "all",
+			source: "any",
+			tag: null,
+			sort: "newest",
+			tagPage: 0,
+		};
+		const state = createRouterContext({
+			data: buildCallbackPayload("menu_time", "menu-filters", 0),
+			overrides: {
+				getItemMenu: () => menu,
+				buildTimeMenuKeyboard: () => [[{ text: "Today", callbackData: "cb:today" }]],
+			},
+		});
+		await routeTelegramCallback(state.context);
+
+		expect(state.sent).toHaveLength(1);
+		expect(state.sent[0]?.text).toContain("Select time filter");
+		expect(state.sent[0]?.options?.inlineKeyboard?.[0]?.[0]?.callbackData).toBe("cb:today");
+	});
 });

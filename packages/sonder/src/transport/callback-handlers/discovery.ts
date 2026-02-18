@@ -106,12 +106,40 @@ export interface DiscoveryMenuFilterCallbackContext {
 	sendMessage: MessageSender;
 }
 
+function normalizeMenuState(menu: ItemMenuStateLike): void {
+	if (!Number.isFinite(menu.page) || menu.page < 0) {
+		menu.page = 0;
+	}
+	if (!Number.isFinite(menu.pageSize) || menu.pageSize < 1) {
+		menu.pageSize = 5;
+	}
+	if (!Number.isFinite(menu.tagPage) || menu.tagPage < 0) {
+		menu.tagPage = 0;
+	}
+	if (
+		menu.time !== "all" &&
+		menu.time !== "today" &&
+		menu.time !== "7d" &&
+		menu.time !== "30d" &&
+		menu.time !== "year"
+	) {
+		menu.time = "all";
+	}
+	if (menu.source !== "any" && menu.source !== "web") {
+		menu.source = "any";
+	}
+	if (menu.sort !== "newest" && menu.sort !== "oldest") {
+		menu.sort = "newest";
+	}
+}
+
 export async function handleDiscoveryMenuFilterCallback(context: DiscoveryMenuFilterCallbackContext): Promise<boolean> {
 	const menu = context.getItemMenu(context.chatId, context.menuId);
 	if (!menu) {
 		await context.sendMessage(context.chatId, "This menu expired. Use /list or /find again.");
 		return true;
 	}
+	normalizeMenuState(menu);
 
 	if (context.action === "menu_time") {
 		await context.sendMessage(context.chatId, "Select time filter", {
@@ -148,36 +176,55 @@ export async function handleDiscoveryMenuFilterCallback(context: DiscoveryMenuFi
 
 	if (context.action === "menu_time_set") {
 		const next = context.parseTimeFilter(context.argument);
-		if (next) {
-			menu.time = next;
-			menu.page = 0;
+		if (!next) {
+			await context.sendMessage(context.chatId, "Invalid time filter selection. Use the menu buttons again.");
+			return true;
 		}
+		menu.time = next;
+		menu.page = 0;
 	}
 	if (context.action === "menu_source_set") {
 		const next = context.parseSourceFilter(context.argument);
-		if (next) {
-			menu.source = next;
-			menu.page = 0;
+		if (!next) {
+			await context.sendMessage(context.chatId, "Invalid source filter selection. Use the menu buttons again.");
+			return true;
 		}
+		menu.source = next;
+		menu.page = 0;
 	}
 	if (context.action === "menu_sort_set") {
 		const next = context.parseSortFilter(context.argument);
-		if (next) {
-			menu.sort = next;
-			menu.page = 0;
+		if (!next) {
+			await context.sendMessage(context.chatId, "Invalid sort selection. Use the menu buttons again.");
+			return true;
 		}
+		menu.sort = next;
+		menu.page = 0;
 	}
 	if (context.action === "menu_tag_set") {
 		if (context.argument === "0") {
 			menu.tag = null;
 		} else {
-			menu.tag = context.parseTagSelection(menu, context.argument);
+			const selectedTag = context.parseTagSelection(menu, context.argument);
+			if (!selectedTag) {
+				await context.sendMessage(context.chatId, "Invalid tag selection. Use the menu buttons again.", {
+					inlineKeyboard: context.buildTagMenuKeyboard(context.menuId, menu),
+				});
+				return true;
+			}
+			menu.tag = selectedTag;
 		}
 		menu.page = 0;
 		menu.tagPage = 0;
 	}
 	if (context.action === "menu_tag_page") {
 		const tags = context.collectMenuTags(menu);
+		if (tags.length === 0) {
+			await context.sendMessage(context.chatId, "No tags available for this menu.", {
+				inlineKeyboard: context.buildMenuBackKeyboard(context.menuId),
+			});
+			return true;
+		}
 		const totalPages = Math.max(1, Math.ceil(tags.length / 6));
 		menu.tagPage = context.parseTagPage(context.argument, totalPages);
 		await context.sendMessage(context.chatId, "Select tag filter", {

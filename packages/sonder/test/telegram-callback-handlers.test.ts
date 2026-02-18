@@ -387,6 +387,20 @@ describe("telegram callback handlers", () => {
 		expect(sent[0]?.options?.inlineKeyboard?.[0]?.[0]?.callbackData).toBe("menu-f:back");
 	});
 
+	it("shows no-tags guidance for stale tag pagination callbacks", async () => {
+		const { context, sent } = createDiscoveryMenuFilterContext({
+			action: "menu_tag_page",
+			argument: "1",
+			tags: [],
+		});
+		const handled = await handleDiscoveryMenuFilterCallback(context);
+
+		expect(handled).toBe(true);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]?.text).toContain("No tags available");
+		expect(sent[0]?.options?.inlineKeyboard?.[0]?.[0]?.callbackData).toBe("menu-f:back");
+	});
+
 	it("applies time filter and re-renders discovery menu", async () => {
 		const { context, sent, menuState } = createDiscoveryMenuFilterContext({
 			action: "menu_time_set",
@@ -399,6 +413,33 @@ describe("telegram callback handlers", () => {
 		expect(menuState.page).toBe(0);
 		expect(sent).toHaveLength(1);
 		expect(sent[0]?.text).toContain("today");
+	});
+
+	it("returns stale-selection guidance for invalid time filter callbacks", async () => {
+		const { context, sent, menuState } = createDiscoveryMenuFilterContext({
+			action: "menu_time_set",
+			argument: "invalid",
+		});
+		const handled = await handleDiscoveryMenuFilterCallback(context);
+
+		expect(handled).toBe(true);
+		expect(menuState.time).toBe("all");
+		expect(sent).toHaveLength(1);
+		expect(sent[0]?.text).toContain("Invalid time filter selection");
+	});
+
+	it("returns stale-selection guidance for invalid tag selection callbacks", async () => {
+		const { context, sent, menuState } = createDiscoveryMenuFilterContext({
+			action: "menu_tag_set",
+			argument: "99",
+		});
+		const handled = await handleDiscoveryMenuFilterCallback(context);
+
+		expect(handled).toBe(true);
+		expect(menuState.tag).toBeNull();
+		expect(sent).toHaveLength(1);
+		expect(sent[0]?.text).toContain("Invalid tag selection");
+		expect(sent[0]?.options?.inlineKeyboard?.[0]?.[0]?.callbackData).toBe("menu-f:tag");
 	});
 
 	it("wraps discovery next-page navigation", async () => {
