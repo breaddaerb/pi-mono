@@ -4,17 +4,10 @@ import { type Dispatcher, ProxyAgent, fetch as undiciFetch } from "undici";
 import type { SonderApp, SonderCommandResult } from "../app/index.js";
 import type { ParsedTelegramModeCommand } from "../commands/parse-mode-command.js";
 import { parseTelegramModeCommand } from "../commands/parse-mode-command.js";
-import { buildCallbackPayload, parseCallbackPayload } from "./telegram-callback.js";
-import {
-	handleContextActionCallback,
-	handleDiscoveryItemCallback,
-	handleDiscoveryMenuFilterCallback,
-	handleHistoryCallback,
-	handleModelSetCallback,
-	handleSessionNewCallback,
-	handleSessionResumeCallback,
-} from "./telegram-callback-handlers.js";
+import { buildCallbackPayload } from "./telegram-callback.js";
+import { routeTelegramCallback } from "./telegram-callback-router.js";
 import { extractUrlAndPastedText } from "./telegram-input.js";
+import { handleModeCommand as handleModeCommandCore } from "./telegram-mode-command-handler.js";
 import { type ChatModeState, TelegramChatModeStore } from "./telegram-mode-store.js";
 import { formatCommandResult, formatPollingError, splitForTelegram, truncateMiddle } from "./telegram-renderers.js";
 
@@ -970,189 +963,54 @@ export class TelegramBotRunner {
 
 	private async handleCallback(chatId: number, callbackQueryId: string, data: string): Promise<void> {
 		try {
-			const payload = parseCallbackPayload(data);
-			if (!payload) {
-				await this.api.sendMessage(chatId, "Unsupported action. Use /open or /find again.");
-				return;
-			}
-			if (payload.action.startsWith("ctx_")) {
-				const contextAction =
-					payload.action === "ctx_exit" || payload.action === "ctx_del" || payload.action === "ctx_viewer"
-						? payload.action
-						: null;
-				if (!contextAction) {
-					await this.api.sendMessage(chatId, "Unsupported action. Use /open or /find again.");
-					return;
-				}
-				const handled = await handleContextActionCallback({
-					chatId,
-					action: contextAction,
-					getChatMode: this.getChatMode.bind(this),
-					clearChatMode: this.clearChatMode.bind(this),
-					deleteItemAndNotify: this.deleteItemAndNotify.bind(this),
-					getViewerItemUrl: this.getViewerItemUrl,
-					sendMessage: this.api.sendMessage.bind(this.api),
-				});
-				if (handled) {
-					return;
-				}
-			}
-
-			if (payload.action === "model_set") {
-				const handled = await handleModelSetCallback({
-					chatId,
-					menuId: payload.menuId,
-					argument: payload.argument,
-					modelSelector: this.modelSelector,
-					getModelMenu: this.getModelMenu.bind(this),
-					getModelIdByIndex: (menu, argument) => this.getModelIdByIndex(menu as ModelMenuState, argument),
-					createModelMenu: this.createModelMenu.bind(this),
-					buildModelsMenuText: this.buildModelsMenuText.bind(this),
-					buildModelsMenuKeyboard: this.buildModelsMenuKeyboard.bind(this),
-					sendMessage: this.api.sendMessage.bind(this.api),
-				});
-				if (handled) {
-					return;
-				}
-			}
-
-			if (
-				payload.action === "menu_time" ||
-				payload.action === "menu_time_set" ||
-				payload.action === "menu_source" ||
-				payload.action === "menu_source_set" ||
-				payload.action === "menu_tag" ||
-				payload.action === "menu_tag_set" ||
-				payload.action === "menu_tag_page" ||
-				payload.action === "menu_sort" ||
-				payload.action === "menu_sort_set" ||
-				payload.action === "menu_back" ||
-				payload.action === "menu_clear" ||
-				payload.action === "menu_prev" ||
-				payload.action === "menu_next"
-			) {
-				const handled = await handleDiscoveryMenuFilterCallback({
-					chatId,
-					menuId: payload.menuId,
-					action: payload.action,
-					argument: payload.argument,
-					getItemMenu: this.getItemMenu.bind(this),
-					collectMenuTags: (menu) => this.collectMenuTags(menu as ItemMenuState),
-					buildTimeMenuKeyboard: this.buildTimeMenuKeyboard.bind(this),
-					buildSourceMenuKeyboard: this.buildSourceMenuKeyboard.bind(this),
-					buildSortMenuKeyboard: this.buildSortMenuKeyboard.bind(this),
-					buildTagMenuKeyboard: (menuId, menu) => this.buildTagMenuKeyboard(menuId, menu as ItemMenuState),
-					buildMenuBackKeyboard: (menuId) => [
-						[{ text: "Back", callbackData: buildCallbackPayload("menu_back", menuId, 0) }],
-					],
-					parseTimeFilter: this.parseTimeFilter.bind(this),
-					parseSourceFilter: this.parseSourceFilter.bind(this),
-					parseSortFilter: this.parseSortFilter.bind(this),
-					parseTagSelection: (menu, argument) => this.parseTagSelection(menu as ItemMenuState, argument),
-					parseTagPage: this.parseTagPage.bind(this),
-					pagedMenuEntries: (menu) => this.pagedMenuEntries(menu as ItemMenuState),
-					buildDiscoveryMenuText: (menu) => this.buildDiscoveryMenuText(menu as ItemMenuState),
-					buildDiscoveryMenuKeyboard: (menuId, menu) =>
-						this.buildDiscoveryMenuKeyboard(menuId, menu as ItemMenuState),
-					sendMessage: this.api.sendMessage.bind(this.api),
-				});
-				if (handled) {
-					return;
-				}
-			}
-
-			if (payload.action === "sess_resume") {
-				const handled = await handleSessionResumeCallback({
-					chatId,
-					menuId: payload.menuId,
-					argument: payload.argument,
-					getSessionMenu: this.getSessionMenu.bind(this),
-					getSessionIdByIndex: (menu, argument) => this.getSessionIdByIndex(menu as SessionMenuState, argument),
-					resumeItemDialogue: this.app.resumeItemDialogue.bind(this.app),
-					createItemDialogue: this.app.createItemDialogue.bind(this.app),
-					setChatMode: this.setChatMode.bind(this),
-					sendItemModeOpenedMessage: this.sendItemModeOpenedMessage.bind(this),
-					sendMessage: this.api.sendMessage.bind(this.api),
-				});
-				if (handled) {
-					return;
-				}
-			}
-
-			if (payload.action === "sess_new") {
-				const handled = await handleSessionNewCallback({
-					chatId,
-					menuId: payload.menuId,
-					argument: payload.argument,
-					getSessionMenu: this.getSessionMenu.bind(this),
-					getSessionIdByIndex: (menu, argument) => this.getSessionIdByIndex(menu as SessionMenuState, argument),
-					resumeItemDialogue: this.app.resumeItemDialogue.bind(this.app),
-					createItemDialogue: this.app.createItemDialogue.bind(this.app),
-					setChatMode: this.setChatMode.bind(this),
-					sendItemModeOpenedMessage: this.sendItemModeOpenedMessage.bind(this),
-					sendMessage: this.api.sendMessage.bind(this.api),
-				});
-				if (handled) {
-					return;
-				}
-			}
-
-			if (
-				payload.action === "hist_prev" ||
-				payload.action === "hist_next" ||
-				payload.action === "hist_back" ||
-				payload.action === "hist_full"
-			) {
-				const handled = await handleHistoryCallback({
-					chatId,
-					menuId: payload.menuId,
-					action: payload.action,
-					argument: payload.argument,
-					getHistoryMenu: this.getHistoryMenu.bind(this),
-					listDialogueHistory: this.app.listDialogueHistory.bind(this.app),
-					getHistoryPage: this.getHistoryPage.bind(this),
-					createHistoryMenu: this.createHistoryMenu.bind(this),
-					buildHistoryKeyboard: this.buildHistoryKeyboard.bind(this),
-					formatDisplayTime,
-					splitForTelegram,
-					sendMessage: this.api.sendMessage.bind(this.api),
-				});
-				if (handled) {
-					return;
-				}
-			}
-
-			const discoveryAction =
-				payload.action === "find_open" ||
-				payload.action === "find_del" ||
-				payload.action === "list_open" ||
-				payload.action === "list_del"
-					? payload.action
-					: null;
-			if (!discoveryAction) {
-				await this.api.sendMessage(chatId, "Unsupported action. Use /open or /find again.");
-				return;
-			}
-
-			const handled = await handleDiscoveryItemCallback({
+			await routeTelegramCallback({
 				chatId,
-				menuId: payload.menuId,
-				action: discoveryAction,
-				argument: payload.argument,
+				data,
+				modelSelector: this.modelSelector,
+				getChatMode: this.getChatMode.bind(this),
+				clearChatMode: this.clearChatMode.bind(this),
+				deleteItemAndNotify: this.deleteItemAndNotify.bind(this),
+				getViewerItemUrl: this.getViewerItemUrl,
+				getModelMenu: this.getModelMenu.bind(this),
+				getModelIdByIndex: (menu, argument) => this.getModelIdByIndex(menu as ModelMenuState, argument),
+				createModelMenu: this.createModelMenu.bind(this),
+				buildModelsMenuText: this.buildModelsMenuText.bind(this),
+				buildModelsMenuKeyboard: this.buildModelsMenuKeyboard.bind(this),
 				getItemMenu: this.getItemMenu.bind(this),
 				getMenuItemId: (menu, argument) => this.getMenuItemId(menu as ItemMenuState, argument),
-				deleteItemAndNotify: this.deleteItemAndNotify.bind(this),
+				collectMenuTags: (menu) => this.collectMenuTags(menu as ItemMenuState),
+				buildTimeMenuKeyboard: this.buildTimeMenuKeyboard.bind(this),
+				buildSourceMenuKeyboard: this.buildSourceMenuKeyboard.bind(this),
+				buildSortMenuKeyboard: this.buildSortMenuKeyboard.bind(this),
+				buildTagMenuKeyboard: (menuId, menu) => this.buildTagMenuKeyboard(menuId, menu as ItemMenuState),
+				buildMenuBackKeyboard: (menuId) => [
+					[{ text: "Back", callbackData: buildCallbackPayload("menu_back", menuId, 0) }],
+				],
+				parseTimeFilter: this.parseTimeFilter.bind(this),
+				parseSourceFilter: this.parseSourceFilter.bind(this),
+				parseSortFilter: this.parseSortFilter.bind(this),
+				parseTagSelection: (menu, argument) => this.parseTagSelection(menu as ItemMenuState, argument),
+				parseTagPage: this.parseTagPage.bind(this),
+				pagedMenuEntries: (menu) => this.pagedMenuEntries(menu as ItemMenuState),
 				buildDiscoveryMenuText: (menu) => this.buildDiscoveryMenuText(menu as ItemMenuState),
 				buildDiscoveryMenuKeyboard: (menuId, menu) =>
 					this.buildDiscoveryMenuKeyboard(menuId, menu as ItemMenuState),
+				getSessionMenu: this.getSessionMenu.bind(this),
+				getSessionIdByIndex: (menu, argument) => this.getSessionIdByIndex(menu as SessionMenuState, argument),
+				resumeItemDialogue: this.app.resumeItemDialogue.bind(this.app),
+				createItemDialogue: this.app.createItemDialogue.bind(this.app),
 				openItemDialogue: this.app.openItemDialogue.bind(this.app),
 				setChatMode: this.setChatMode.bind(this),
 				sendItemModeOpenedMessage: this.sendItemModeOpenedMessage.bind(this),
+				getHistoryMenu: this.getHistoryMenu.bind(this),
+				listDialogueHistory: this.app.listDialogueHistory.bind(this.app),
+				getHistoryPage: this.getHistoryPage.bind(this),
+				createHistoryMenu: this.createHistoryMenu.bind(this),
+				buildHistoryKeyboard: this.buildHistoryKeyboard.bind(this),
+				formatDisplayTime,
+				splitForTelegram,
 				sendMessage: this.api.sendMessage.bind(this.api),
 			});
-			if (handled) {
-				return;
-			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			await this.api.sendMessage(chatId, `Error (RUNTIME_ERROR): ${message}`);
@@ -1307,156 +1165,29 @@ export class TelegramBotRunner {
 	}
 
 	private async handleModeCommand(chatId: number, command: ParsedTelegramModeCommand): Promise<void> {
-		if (command.type === "open") {
-			if (!command.itemId) {
-				const sessionId = randomUUID();
-				this.setChatMode(chatId, {
-					mode: "general",
-					sessionId,
-					history: [],
-				});
-				await this.api.sendMessage(
-					chatId,
-					`Opened general dialogue mode. Session: ${sessionId}. Send messages directly, /exit to leave.`,
-				);
-				return;
-			}
-
-			const opened = this.app.openItemDialogue(command.itemId);
-			this.setChatMode(chatId, {
-				mode: "item",
-				itemId: opened.itemId,
-				sessionId: opened.sessionId,
-			});
-			await this.sendItemModeOpenedMessage(chatId, "🧠 Item mode opened.", opened.itemId, opened.sessionId);
-			return;
-		}
-
-		if (command.type === "exit") {
-			const existed = this.clearChatMode(chatId);
-			await this.api.sendMessage(chatId, existed ? "Exited active dialogue mode." : "No active dialogue mode.");
-			return;
-		}
-
-		if (command.type === "where") {
-			const mode = this.getChatMode(chatId);
-			const modelLine = this.modelSelector ? `\nModel: ${this.modelSelector.getSelectedModelId()}` : "";
-			if (!mode) {
-				await this.api.sendMessage(chatId, `No active dialogue mode.${modelLine}`);
-				return;
-			}
-			if (mode.mode === "item") {
-				await this.api.sendMessage(
-					chatId,
-					`Active item dialogue\nItem: ${mode.itemId}\nSession: ${mode.sessionId}${modelLine}`,
-				);
-				return;
-			}
-			await this.api.sendMessage(chatId, `Active general dialogue\nSession: ${mode.sessionId}${modelLine}`);
-			return;
-		}
-
-		if (command.type === "models") {
-			if (!this.modelSelector) {
-				await this.api.sendMessage(chatId, "Model selector is available in codex responder mode only.");
-				return;
-			}
-			const modelIds = this.modelSelector.listModels().map((model) => model.id);
-			if (modelIds.length === 0) {
-				await this.api.sendMessage(chatId, "No codex models available.");
-				return;
-			}
-			const selectedModelId = this.modelSelector.getSelectedModelId();
-			const menuId = this.createModelMenu(chatId, modelIds);
-			await this.api.sendMessage(chatId, this.buildModelsMenuText(modelIds, selectedModelId), {
-				inlineKeyboard: this.buildModelsMenuKeyboard(menuId, modelIds, selectedModelId),
-			});
-			return;
-		}
-
-		if (command.type === "sessions") {
-			const activeMode = this.getChatMode(chatId);
-			const activeItemId = activeMode && activeMode.mode === "item" ? activeMode.itemId : undefined;
-			const itemId = command.itemId ?? activeItemId;
-			if (!itemId) {
-				await this.api.sendMessage(chatId, "No active item. Use /find or /list, tap Open, then run /sessions.");
-				return;
-			}
-			const sessions = this.app.listItemDialogues(itemId);
-			if (sessions.length === 0) {
-				await this.api.sendMessage(chatId, `No sessions for current item.`);
-				return;
-			}
-			const lines = sessions.map((session, index) => `${index + 1}. ${formatDisplayTime(session.createdAt)}`);
-			const menuId = this.createSessionMenu(
-				chatId,
-				itemId,
-				sessions.map((session) => session.sessionId),
-			);
-			const keyboard: TelegramInlineKeyboard = [
-				...sessions.map((_, index) => [
-					{ text: `${index + 1} Resume`, callbackData: buildCallbackPayload("sess_resume", menuId, index + 1) },
-				]),
-				[{ text: "New Session", callbackData: buildCallbackPayload("sess_new", menuId, 0) }],
-			];
-			await this.api.sendMessage(chatId, `Sessions\n\n${lines.join("\n")}`, { inlineKeyboard: keyboard });
-			return;
-		}
-
-		if (command.type === "history") {
-			if (command.sessionId) {
-				const pageSize = 8;
-				const menuId = this.createHistoryMenu(chatId, command.sessionId, 0, pageSize);
-				const historyPage = this.getHistoryPage(command.sessionId, 0, pageSize);
-				const keyboard = this.buildHistoryKeyboard(menuId, historyPage.pageTurnsCount);
-				for (const chunk of splitForTelegram(historyPage.text)) {
-					await this.api.sendMessage(
-						chatId,
-						chunk,
-						chunk === historyPage.text ? { inlineKeyboard: keyboard } : undefined,
-					);
-				}
-				return;
-			}
-
-			const mode = this.getChatMode(chatId);
-			if (!mode) {
-				await this.api.sendMessage(chatId, "No active dialogue mode and no sessionId provided.");
-				return;
-			}
-			if (mode.mode === "general") {
-				if (mode.history.length === 0) {
-					await this.api.sendMessage(chatId, `General history is empty for session ${mode.sessionId}.`);
-					return;
-				}
-				const lines = mode.history.map((turn) => `${turn.role}: ${truncateMiddle(turn.content, 280)}`);
-				for (const chunk of splitForTelegram(`History for ${mode.sessionId}\n\n${lines.join("\n\n")}`)) {
-					await this.api.sendMessage(chatId, chunk);
-				}
-				return;
-			}
-
-			const pageSize = 8;
-			const menuId = this.createHistoryMenu(chatId, mode.sessionId, 0, pageSize);
-			const historyPage = this.getHistoryPage(mode.sessionId, 0, pageSize);
-			const keyboard = this.buildHistoryKeyboard(menuId, historyPage.pageTurnsCount);
-			for (const chunk of splitForTelegram(historyPage.text)) {
-				await this.api.sendMessage(
-					chatId,
-					chunk,
-					chunk === historyPage.text ? { inlineKeyboard: keyboard } : undefined,
-				);
-			}
-			return;
-		}
-
-		const resumed = this.app.resumeItemDialogue(command.sessionId);
-		this.setChatMode(chatId, {
-			mode: "item",
-			itemId: resumed.itemId,
-			sessionId: resumed.sessionId,
+		await handleModeCommandCore({
+			chatId,
+			command,
+			getChatMode: this.getChatMode.bind(this),
+			setChatMode: this.setChatMode.bind(this),
+			clearChatMode: this.clearChatMode.bind(this),
+			modelSelector: this.modelSelector,
+			sendMessage: this.api.sendMessage.bind(this.api),
+			openItemDialogue: this.app.openItemDialogue.bind(this.app),
+			listItemDialogues: this.app.listItemDialogues.bind(this.app),
+			resumeItemDialogue: this.app.resumeItemDialogue.bind(this.app),
+			createSessionMenu: this.createSessionMenu.bind(this),
+			createModelMenu: this.createModelMenu.bind(this),
+			buildModelsMenuText: this.buildModelsMenuText.bind(this),
+			buildModelsMenuKeyboard: this.buildModelsMenuKeyboard.bind(this),
+			sendItemModeOpenedMessage: this.sendItemModeOpenedMessage.bind(this),
+			createHistoryMenu: this.createHistoryMenu.bind(this),
+			getHistoryPage: this.getHistoryPage.bind(this),
+			buildHistoryKeyboard: this.buildHistoryKeyboard.bind(this),
+			splitForTelegram,
+			truncateMiddle,
+			formatDisplayTime,
 		});
-		await this.sendItemModeOpenedMessage(chatId, "🧠 Item dialogue resumed.", resumed.itemId, resumed.sessionId);
 	}
 }
 
