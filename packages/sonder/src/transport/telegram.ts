@@ -7,6 +7,18 @@ import { parseTelegramModeCommand } from "../commands/parse-mode-command.js";
 import { handleActiveModeMessage } from "./telegram-active-mode-message-handler.js";
 import { buildCallbackPayload } from "./telegram-callback.js";
 import { routeTelegramCallback } from "./telegram-callback-router.js";
+import {
+	formatSortFilter,
+	formatSourceFilter,
+	formatTimeFilter,
+	parseSortFilter,
+	parseSourceFilter,
+	parseTagPage,
+	parseTimeFilter,
+	type SortFilter,
+	type SourceFilter,
+	type TimeFilter,
+} from "./telegram-discovery-filters.js";
 import { extractUrlAndPastedText } from "./telegram-input.js";
 import { handleModeCommand as handleModeCommandCore } from "./telegram-mode-command-handler.js";
 import { type ChatModeState, TelegramChatModeStore } from "./telegram-mode-store.js";
@@ -264,10 +276,6 @@ function formatDisplayTime(timestamp: string): string {
 }
 
 type MenuKind = "find" | "list";
-
-type TimeFilter = "all" | "today" | "7d" | "30d" | "year";
-type SourceFilter = "any" | "web";
-type SortFilter = "newest" | "oldest";
 
 interface ItemMenuEntry {
 	id: string;
@@ -530,7 +538,7 @@ export class TelegramBotRunner {
 					: "";
 			return `${index + 1}. ${truncateMiddle(entry.originalUrl, 96)}${tags}\n   ${entry.sourceType} · ${formatDisplayTime(entry.createdAt)}${reasonLine}${snippetLine}`;
 		});
-		const filterSummary = `Filters: Time=${this.formatTimeFilter(menu.time)} | Source=${this.formatSourceFilter(menu.source)} | Tag=${menu.tag ?? "Any"} | Sort=${this.formatSortFilter(menu.sort)}`;
+		const filterSummary = `Filters: Time=${formatTimeFilter(menu.time)} | Source=${formatSourceFilter(menu.source)} | Tag=${menu.tag ?? "Any"} | Sort=${formatSortFilter(menu.sort)}`;
 		return `${title} (${paged.total}) [page ${paged.page + 1}/${paged.totalPages}]\n${filterSummary}\n\n${rows.join("\n\n")}`;
 	}
 
@@ -551,18 +559,18 @@ export class TelegramBotRunner {
 			...itemRows,
 			[
 				{
-					text: `Time:${this.formatTimeFilter(menu.time)}`,
+					text: `Time:${formatTimeFilter(menu.time)}`,
 					callbackData: buildCallbackPayload("menu_time", menuId, 0),
 				},
 				{
-					text: `Source:${this.formatSourceFilter(menu.source)}`,
+					text: `Source:${formatSourceFilter(menu.source)}`,
 					callbackData: buildCallbackPayload("menu_source", menuId, 0),
 				},
 			],
 			[
 				{ text: tagLabel, callbackData: buildCallbackPayload("menu_tag", menuId, 0) },
 				{
-					text: `Sort:${this.formatSortFilter(menu.sort)}`,
+					text: `Sort:${formatSortFilter(menu.sort)}`,
 					callbackData: buildCallbackPayload("menu_sort", menuId, 0),
 				},
 			],
@@ -611,43 +619,6 @@ export class TelegramBotRunner {
 		];
 	}
 
-	private formatTimeFilter(filter: TimeFilter): string {
-		if (filter === "today") return "Today";
-		if (filter === "7d") return "Last 7d";
-		if (filter === "30d") return "Last 30d";
-		if (filter === "year") return "This year";
-		return "All";
-	}
-
-	private formatSourceFilter(filter: SourceFilter): string {
-		return filter === "web" ? "Web" : "Any";
-	}
-
-	private formatSortFilter(filter: SortFilter): string {
-		return filter === "oldest" ? "Oldest" : "Newest";
-	}
-
-	private parseTimeFilter(argument: string): TimeFilter | null {
-		if (argument === "0") return "all";
-		if (argument === "1") return "today";
-		if (argument === "2") return "7d";
-		if (argument === "3") return "30d";
-		if (argument === "4") return "year";
-		return null;
-	}
-
-	private parseSourceFilter(argument: string): SourceFilter | null {
-		if (argument === "0") return "any";
-		if (argument === "1") return "web";
-		return null;
-	}
-
-	private parseSortFilter(argument: string): SortFilter | null {
-		if (argument === "0") return "newest";
-		if (argument === "1") return "oldest";
-		return null;
-	}
-
 	private collectMenuTags(menu: ItemMenuState): string[] {
 		return Array.from(new Set(menu.entries.flatMap((entry) => entry.tags))).sort();
 	}
@@ -682,23 +653,6 @@ export class TelegramBotRunner {
 			{ text: "Back", callbackData: buildCallbackPayload("menu_back", menuId, 0) },
 		];
 		return navRow.length > 0 ? [...tagRows, navRow, controls] : [...tagRows, controls];
-	}
-
-	private parseTagPage(argument: string, totalPages: number): number {
-		const parsed = Number.parseInt(argument, 10);
-		if (!Number.isFinite(parsed)) {
-			return 0;
-		}
-		if (totalPages <= 0) {
-			return 0;
-		}
-		if (parsed < 0) {
-			return totalPages - 1;
-		}
-		if (parsed >= totalPages) {
-			return 0;
-		}
-		return parsed;
 	}
 
 	private parseTagSelection(menu: ItemMenuState, argument: string): string | null {
@@ -989,11 +943,11 @@ export class TelegramBotRunner {
 				buildMenuBackKeyboard: (menuId) => [
 					[{ text: "Back", callbackData: buildCallbackPayload("menu_back", menuId, 0) }],
 				],
-				parseTimeFilter: this.parseTimeFilter.bind(this),
-				parseSourceFilter: this.parseSourceFilter.bind(this),
-				parseSortFilter: this.parseSortFilter.bind(this),
+				parseTimeFilter,
+				parseSourceFilter,
+				parseSortFilter,
 				parseTagSelection: (menu, argument) => this.parseTagSelection(menu as ItemMenuState, argument),
-				parseTagPage: this.parseTagPage.bind(this),
+				parseTagPage,
 				pagedMenuEntries: (menu) => this.pagedMenuEntries(menu as ItemMenuState),
 				buildDiscoveryMenuText: (menu) => this.buildDiscoveryMenuText(menu as ItemMenuState),
 				buildDiscoveryMenuKeyboard: (menuId, menu) =>
