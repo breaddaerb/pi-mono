@@ -187,7 +187,7 @@ describe("viewer server", () => {
 		const extractedPath = join(root, "extracted.txt");
 		writeFileSync(
 			snapshotPath,
-			'<html><head><meta http-equiv="refresh" content="0;url=https://x.com"></head><body onload="alert(\'x\')"><h1 onclick="steal()">Snapshot</h1><p>Main claim lives here.</p><a href="javascript:alert(\'x\')">bad</a><img src="x" onerror="alert(\'x\')"/><script>document.body.innerHTML=\'blanked\';</script><iframe src=\'https://example.com\'></iframe></body></html>',
+			'<html><head><meta http-equiv="refresh" content="0;url=https://x.com"></head><body onload="alert(\'x\')"><h1 onclick="steal()">Snapshot</h1><p>Main claim lives here.</p><a href="javascript:alert(\'x\')">bad</a><a href="java&#x73;cript:alert(\'x\')">bad2</a><img src="x" onerror="alert(\'x\')"/><script>document.body.innerHTML=\'blanked\';</script><iframe src=\'https://example.com\'></iframe></body></html>',
 			"utf8",
 		);
 		writeFileSync(extractedPath, "Snapshot Main claim lives here.", "utf8");
@@ -267,6 +267,7 @@ describe("viewer server", () => {
 			expect(snapshotHtml).not.toContain("onclick=");
 			expect(snapshotHtml).not.toContain("onerror=");
 			expect(snapshotHtml).not.toContain('href="javascript:');
+			expect(snapshotHtml.toLowerCase()).not.toContain("java&#x73;cript");
 			expect(clientScript).toContain("iframe.style.visibility = 'hidden'");
 
 			const createResponse = await fetch(`${viewer.baseUrl}/viewer/api/items/item_view/annotations`, {

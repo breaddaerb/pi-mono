@@ -24,4 +24,15 @@ describe("viewer sanitize", () => {
 		expect(sanitized).not.toContain("javascript:");
 		expect(sanitized).not.toContain("vbscript:");
 	});
+
+	it("strips obfuscated script protocols with whitespace/entity encoding", () => {
+		const html =
+			"<a href='java&#x73;cript:alert(1)'>a</a><img src='java\nscript:alert(1)'/><form action='&#118;bscript:msgbox(1)'></form><a href='javascript&colon;alert(1)'>b</a>";
+
+		const sanitized = sanitizeSnapshotHtmlForViewer(html);
+
+		expect(sanitized.toLowerCase()).not.toContain("javascript");
+		expect(sanitized.toLowerCase()).not.toContain("vbscript");
+		expect(sanitized).toContain("<a>b</a>");
+	});
 });
