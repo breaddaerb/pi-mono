@@ -21,7 +21,7 @@ function createMenu(partial?: Partial<ItemMenuState>): ItemMenuState {
 				sourceType: "web",
 				originalUrl: "https://example.com/alpha",
 				tags: ["a", "common"],
-				reasons: ["title"],
+				reasons: ["item-note", "content"],
 				snippets: ["alpha snippet"],
 			},
 			{
@@ -30,7 +30,7 @@ function createMenu(partial?: Partial<ItemMenuState>): ItemMenuState {
 				sourceType: "web",
 				originalUrl: "https://example.com/beta",
 				tags: ["b", "common"],
-				reasons: ["body"],
+				reasons: ["annotation-tags"],
 				snippets: ["beta snippet"],
 			},
 		],
@@ -69,6 +69,7 @@ describe("telegram discovery menu", () => {
 
 		expect(text).toContain("Find: query");
 		expect(text).toContain("Filters: Time=All | Source=Any");
+		expect(text).toContain("reasons: Item notes, Extracted content");
 		expect(keyboard[0]?.[0]?.callbackData).toBe("sx:v1:find_open:menu-1:1");
 		expect(keyboard[0]?.[1]?.callbackData).toBe("sx:v1:find_del:menu-1:1");
 	});

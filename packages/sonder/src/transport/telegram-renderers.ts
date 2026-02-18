@@ -1,4 +1,5 @@
 import type { SonderApp } from "../app/index.js";
+import { formatDiscoveryReasonSummary } from "./telegram-retrieval-reasons.js";
 
 const MAX_TELEGRAM_MESSAGE_LENGTH = 3500;
 
@@ -113,7 +114,7 @@ export function formatCommandResult(result: Awaited<ReturnType<SonderApp["proces
 		const lines = result.value.items.map((item, index) => {
 			const tags = item.tags.length > 0 ? ` ${item.tags.map((tag) => `#${tag}`).join(" ")}` : "";
 			const snippetLine = item.snippets.length > 0 ? `\n   match: ${truncateMiddle(item.snippets[0], 120)}` : "";
-			return `${index + 1}. ${truncateMiddle(item.originalUrl, 100)}${tags}\n   reasons: ${item.reasons.join(", ")}${snippetLine}`;
+			return `${index + 1}. ${truncateMiddle(item.originalUrl, 100)}${tags}\n   reasons: ${formatDiscoveryReasonSummary(item.reasons)}${snippetLine}`;
 		});
 		return `🔎 Found ${result.value.items.length} results for: ${result.value.query}\n\n${lines.join("\n\n")}`;
 	}

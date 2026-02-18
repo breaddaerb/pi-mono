@@ -1,6 +1,7 @@
 import type { ItemMenuEntry, ItemMenuState } from "./menu-store.js";
 import { buildCallbackPayload } from "./telegram-callback.js";
 import { formatSortFilter, formatSourceFilter, formatTimeFilter } from "./telegram-discovery-filters.js";
+import { formatDiscoveryReasonSummary } from "./telegram-retrieval-reasons.js";
 
 export interface DiscoveryPage {
 	items: ItemMenuEntry[];
@@ -97,7 +98,9 @@ export function buildDiscoveryMenuText(
 	const rows = paged.items.map((entry, index) => {
 		const tags = entry.tags.length > 0 ? ` ${entry.tags.map((tag) => `#${tag}`).join(" ")}` : "";
 		const reasonLine =
-			menu.kind === "find" && entry.reasons.length > 0 ? `\n   reasons: ${entry.reasons.join(", ")}` : "";
+			menu.kind === "find" && entry.reasons.length > 0
+				? `\n   reasons: ${formatDiscoveryReasonSummary(entry.reasons)}`
+				: "";
 		const snippetLine =
 			menu.kind === "find" && entry.snippets.length > 0
 				? `\n   match: ${options.truncateMiddle(entry.snippets[0], 120)}`
