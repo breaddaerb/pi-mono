@@ -10,7 +10,9 @@ import { routeTelegramCallback } from "./telegram-callback-router.js";
 import { extractUrlAndPastedText } from "./telegram-input.js";
 import { handleModeCommand as handleModeCommandCore } from "./telegram-mode-command-handler.js";
 import { type ChatModeState, TelegramChatModeStore } from "./telegram-mode-store.js";
+import { handlePlainMessage } from "./telegram-plain-message-handler.js";
 import { formatCommandResult, formatPollingError, splitForTelegram, truncateMiddle } from "./telegram-renderers.js";
+import { handleSlashMessage } from "./telegram-slash-command-handler.js";
 
 interface TelegramGetUpdatesResponse {
 	ok: boolean;
@@ -1035,124 +1037,50 @@ export class TelegramBotRunner {
 			}
 
 			if (!normalizedInput.startsWith("/")) {
-				if (this.hasPendingSaveInput(chatId)) {
-					const saveCommandResult = await this.app.processCommand(`/save ${normalizedInput}`);
-					if (!saveCommandResult.ok || saveCommandResult.value.type !== "save") {
-						const responseText = formatCommandResult(saveCommandResult);
-						await this.api.sendMessage(chatId, responseText);
-						await this.api.sendMessage(
-							chatId,
-							"Still waiting for save input. Send: <url> [#tags...] [pasted evidence text], or run /exit to cancel.",
-						);
-						return;
-					}
-					this.clearPendingSaveInput(chatId);
-					await this.sendSaveResultAndMaybeOpenItemMode(chatId, saveCommandResult.value);
-					return;
-				}
-
-				const activeMode = this.getChatMode(chatId);
-				if (!activeMode) {
-					const urlInput = extractUrlAndPastedText(text);
-					if (urlInput) {
-						const saveResult = await this.app.saveFromInput({
-							url: urlInput.url,
-							tags: [],
-							pastedText: urlInput.pastedText,
-						});
-						await this.sendSaveResultAndMaybeOpenItemMode(chatId, saveResult);
-						return;
-					}
-					await this.api.sendMessage(
-						chatId,
-						"No active dialogue. Use /open <itemId> to discuss an item, or /open for general chat. Use /history <sessionId> to view past turns.",
-					);
-					return;
-				}
-
-				this.clearPendingSaveInput(chatId);
-				await handleActiveModeMessage({
+				await handlePlainMessage({
 					chatId,
 					text,
-					activeMode,
-					askInItemDialogue: this.app.askInItemDialogue.bind(this.app),
-					chatWithoutItem: this.app.chatWithoutItem.bind(this.app),
-					setChatMode: this.setChatMode.bind(this),
-					formatContextualAnswer: this.formatContextualAnswer.bind(this),
-					splitForTelegram,
+					normalizedInput,
+					hasPendingSaveInput: this.hasPendingSaveInput.bind(this),
+					clearPendingSaveInput: this.clearPendingSaveInput.bind(this),
+					getChatMode: this.getChatMode.bind(this),
+					processCommand: this.app.processCommand.bind(this.app),
+					saveFromInput: this.app.saveFromInput.bind(this.app),
+					sendSaveResultAndMaybeOpenItemMode: this.sendSaveResultAndMaybeOpenItemMode.bind(this),
+					extractUrlAndPastedText,
+					handleActiveModeMessage: async (chatId, text, activeMode) => {
+						await handleActiveModeMessage({
+							chatId,
+							text,
+							activeMode,
+							askInItemDialogue: this.app.askInItemDialogue.bind(this.app),
+							chatWithoutItem: this.app.chatWithoutItem.bind(this.app),
+							setChatMode: this.setChatMode.bind(this),
+							formatContextualAnswer: this.formatContextualAnswer.bind(this),
+							splitForTelegram,
+							sendMessage: this.api.sendMessage.bind(this.api),
+						});
+					},
 					sendMessage: this.api.sendMessage.bind(this.api),
 				});
 				return;
 			}
 
-			if (normalizedInput.startsWith("/ask")) {
-				this.clearPendingSaveInput(chatId);
-				await this.api.sendMessage(
-					chatId,
-					"In Telegram, /ask is deprecated. Use /find or /list, tap Open, then ask in plain text.",
-				);
-				return;
-			}
-
-			const normalized = normalizedInput.trim();
-			if (normalized === "/save") {
-				this.markSaveInputPending(chatId);
-				await this.api.sendMessage(
-					chatId,
-					"Send save input in your next message: <url> [#tags...] [pasted evidence text].\nExample: https://example.com/article #ml This argues that test-time scaling...",
-				);
-				return;
-			}
-
-			this.clearPendingSaveInput(chatId);
-			const commandText = normalized === "/find" ? "/list" : normalizedInput;
-			const result = await this.app.processCommand(commandText);
-			if (result.ok && result.value.type === "save") {
-				await this.sendSaveResultAndMaybeOpenItemMode(chatId, result.value);
-				return;
-			}
-			if (
-				result.ok &&
-				(result.value.type === "find" || result.value.type === "list") &&
-				result.value.items.length > 0
-			) {
-				const menuKind: MenuKind = result.value.type;
-				const entries: ItemMenuEntry[] =
-					result.value.type === "find"
-						? result.value.items.map((item) => ({
-								id: item.id,
-								createdAt: item.createdAt,
-								sourceType: String(item.sourceType),
-								originalUrl: item.originalUrl,
-								tags: item.tags,
-								reasons: item.reasons,
-								snippets: item.snippets,
-							}))
-						: result.value.items.map((item) => ({
-								id: item.id,
-								createdAt: item.createdAt,
-								sourceType: String(item.sourceType),
-								originalUrl: item.originalUrl,
-								tags: item.tags,
-								reasons: [],
-								snippets: [],
-							}));
-				const query = result.value.type === "find" ? result.value.query : null;
-				const menuId = this.createItemMenu(chatId, menuKind, entries, query);
-				const menu = this.getItemMenu(chatId, menuId);
-				if (!menu) {
-					await this.api.sendMessage(chatId, "Failed to open discovery menu. Try again.");
-					return;
-				}
-				const responseText = this.buildDiscoveryMenuText(menu);
-				const inlineKeyboard = this.buildDiscoveryMenuKeyboard(menuId, menu);
-				await this.api.sendMessage(chatId, responseText, { inlineKeyboard });
-				return;
-			}
-			const responseText = formatCommandResult(result);
-			for (const chunk of splitForTelegram(responseText)) {
-				await this.api.sendMessage(chatId, chunk);
-			}
+			await handleSlashMessage({
+				chatId,
+				normalizedInput,
+				markSaveInputPending: this.markSaveInputPending.bind(this),
+				clearPendingSaveInput: this.clearPendingSaveInput.bind(this),
+				processCommand: this.app.processCommand.bind(this.app),
+				sendSaveResultAndMaybeOpenItemMode: this.sendSaveResultAndMaybeOpenItemMode.bind(this),
+				createItemMenu: this.createItemMenu.bind(this),
+				getItemMenu: this.getItemMenu.bind(this),
+				buildDiscoveryMenuText: (menu) => this.buildDiscoveryMenuText(menu as ItemMenuState),
+				buildDiscoveryMenuKeyboard: (menuId, menu) =>
+					this.buildDiscoveryMenuKeyboard(menuId, menu as ItemMenuState),
+				splitForTelegram,
+				sendMessage: this.api.sendMessage.bind(this.api),
+			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			await this.api.sendMessage(chatId, `Error (RUNTIME_ERROR): ${message}`);
