@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
@@ -15,6 +14,7 @@ import {
 	type StoredChatModeState,
 } from "../storage/index.js";
 import type { Annotation, DialogueTurnStatus, ItemSourceType } from "../types.js";
+import { AnnotationService } from "./annotation-service.js";
 import { DiscoveryService } from "./discovery-service.js";
 import {
 	type SaveEvidenceType,
@@ -173,10 +173,11 @@ export class SonderApp {
 	readonly dataRootDir: string;
 	private readonly responder: AskResponder;
 	private readonly chatModeStateRepo: ChatModeStateRepo;
+	private readonly annotationService: AnnotationService;
 	private readonly discoveryService: DiscoveryService;
 	private readonly saveService: SaveService;
 
-	constructor(private readonly options: SonderAppOptions) {
+	constructor(options: SonderAppOptions) {
 		const databasePath = options.paths.databasePath ?? join(options.paths.rootDir, "sonder.sqlite");
 		this.dataRootDir = options.paths.dataRootDir ?? join(options.paths.rootDir, "data");
 		mkdirSync(this.dataRootDir, { recursive: true });
@@ -198,6 +199,12 @@ export class SonderApp {
 			},
 			{ persistThinking: options.persistThinking, now: options.now },
 		);
+		this.annotationService = new AnnotationService({
+			annotationsRepo: this.annotationsRepo,
+			artifactsRepo: this.artifactsRepo,
+			itemsRepo: this.itemsRepo,
+			now: options.now,
+		});
 		this.discoveryService = new DiscoveryService({
 			itemsRepo: this.itemsRepo,
 			artifactsRepo: this.artifactsRepo,
@@ -290,30 +297,12 @@ export class SonderApp {
 		tags?: string[];
 		anchor?: string;
 	}): SonderAnnotationItem {
-		this.ensureItemExists(input.itemId);
-		const annotationId = randomUUID();
-		const now = (this.options.now ?? (() => new Date()))().toISOString();
-		const artifactId = this.selectAnnotationArtifactId(input.itemId);
-		const annotation: Annotation = {
-			id: annotationId,
-			itemId: input.itemId,
-			artifactId,
-			type: input.type,
-			text: input.text,
-			comment: input.comment ?? null,
-			color: input.color ?? null,
-			tags: input.tags ?? [],
-			anchor: input.anchor ?? `item://${input.itemId}#${input.type}:${annotationId}`,
-			createdAt: now,
-			updatedAt: now,
-		};
-		this.annotationsRepo.create(annotation);
+		const annotation = this.annotationService.create(input);
 		return this.toAnnotationItem(annotation);
 	}
 
 	listAnnotations(itemId: string): SonderAnnotationItem[] {
-		this.ensureItemExists(itemId);
-		return this.annotationsRepo.listByItemId(itemId).map((annotation) => this.toAnnotationItem(annotation));
+		return this.annotationService.list(itemId).map((annotation) => this.toAnnotationItem(annotation));
 	}
 
 	deleteItem(itemId: string): SonderDeleteItemResult {
@@ -337,25 +326,12 @@ export class SonderApp {
 		tags?: string[];
 		anchor?: string;
 	}): SonderAnnotationItem {
-		const existing = this.annotationsRepo.findById(input.annotationId);
-		if (!existing) {
-			throw new Error(`Annotation not found: ${input.annotationId}`);
-		}
-		const updated: Annotation = {
-			...existing,
-			text: input.text !== undefined ? input.text : existing.text,
-			comment: input.comment !== undefined ? input.comment : existing.comment,
-			color: input.color !== undefined ? input.color : existing.color,
-			tags: input.tags ?? existing.tags,
-			anchor: input.anchor ?? existing.anchor,
-			updatedAt: (this.options.now ?? (() => new Date()))().toISOString(),
-		};
-		this.annotationsRepo.updateById(updated);
+		const updated = this.annotationService.update(input);
 		return this.toAnnotationItem(updated);
 	}
 
 	deleteAnnotation(annotationId: string): boolean {
-		return this.annotationsRepo.deleteById(annotationId);
+		return this.annotationService.delete(annotationId);
 	}
 
 	resumeItemDialogue(sessionId: string): SonderDialogueSessionInfo {
@@ -539,23 +515,6 @@ export class SonderApp {
 			const message = error instanceof Error ? error.message : String(error);
 			return { ok: false, error: { code: "RUNTIME_ERROR", message } };
 		}
-	}
-
-	private selectAnnotationArtifactId(itemId: string): string {
-		const artifacts = this.artifactsRepo.listByItemId(itemId);
-		if (artifacts.length === 0) {
-			throw new Error(`No artifacts found for item: ${itemId}`);
-		}
-
-		const extractedTextArtifact = artifacts.find((artifact) => artifact.kind === "extracted-text");
-		if (extractedTextArtifact) {
-			return extractedTextArtifact.id;
-		}
-		const snapshotHtmlArtifact = artifacts.find((artifact) => artifact.kind === "snapshot-html");
-		if (snapshotHtmlArtifact) {
-			return snapshotHtmlArtifact.id;
-		}
-		return artifacts[0].id;
 	}
 
 	private ensureItemExists(itemId: string): void {
