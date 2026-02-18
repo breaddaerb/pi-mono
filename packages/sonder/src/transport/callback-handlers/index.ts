@@ -2,7 +2,7 @@ export {
 	type ContextActionCallbackContext,
 	type ContextCallbackAction,
 	handleContextActionCallback,
-} from "./callback-handlers/context.js";
+} from "./context.js";
 export {
 	type DiscoveryItemCallbackAction,
 	type DiscoveryItemCallbackContext,
@@ -10,15 +10,15 @@ export {
 	type DiscoveryMenuFilterCallbackContext,
 	handleDiscoveryItemCallback,
 	handleDiscoveryMenuFilterCallback,
-} from "./callback-handlers/discovery.js";
+} from "./discovery.js";
 export {
 	type HistoryCallbackAction,
 	type HistoryCallbackContext,
 	handleHistoryCallback,
-} from "./callback-handlers/history.js";
-export { handleModelSetCallback, type ModelSetCallbackContext } from "./callback-handlers/model.js";
+} from "./history.js";
+export { handleModelSetCallback, type ModelSetCallbackContext } from "./model.js";
 export {
 	handleSessionNewCallback,
 	handleSessionResumeCallback,
 	type SessionCallbackContext,
-} from "./callback-handlers/session.js";
+} from "./session.js";
