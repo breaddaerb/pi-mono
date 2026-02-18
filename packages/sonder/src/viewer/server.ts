@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname } from "node:path";
 import type { SonderApp } from "../app/index.js";
 import type { AnnotationType } from "../types.js";
+import { sanitizeSnapshotHtmlForViewer } from "./sanitize.js";
 
 export interface SonderViewerServerOptions {
 	app: SonderApp;
@@ -876,38 +877,6 @@ function renderViewerPage(itemId: string): string {
     </script>
   </body>
 </html>`;
-}
-
-function stripInlineEventHandlers(html: string): string {
-	return html.replaceAll(/\son[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "");
-}
-
-function stripDangerousUrlAttributes(html: string): string {
-	let sanitized = html;
-	sanitized = sanitized.replaceAll(
-		/\s(?:href|src|xlink:href|formaction|action)\s*=\s*"\s*(?:javascript|vbscript):[^"]*"/gi,
-		"",
-	);
-	sanitized = sanitized.replaceAll(
-		/\s(?:href|src|xlink:href|formaction|action)\s*=\s*'\s*(?:javascript|vbscript):[^']*'/gi,
-		"",
-	);
-	sanitized = sanitized.replaceAll(
-		/\s(?:href|src|xlink:href|formaction|action)\s*=\s*(?:javascript|vbscript):[^\s>]+/gi,
-		"",
-	);
-	return sanitized;
-}
-
-function sanitizeSnapshotHtmlForViewer(html: string): string {
-	let sanitized = html;
-	sanitized = sanitized.replaceAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
-	sanitized = sanitized.replaceAll(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, "");
-	sanitized = sanitized.replaceAll(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, "");
-	sanitized = sanitized.replaceAll(/<meta\b[^>]*http-equiv=["']?refresh["']?[^>]*>/gi, "");
-	sanitized = stripInlineEventHandlers(sanitized);
-	sanitized = stripDangerousUrlAttributes(sanitized);
-	return sanitized;
 }
 
 function injectOverlayIntoSnapshotHtml(html: string, itemId: string): string {
