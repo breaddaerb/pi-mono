@@ -233,7 +233,13 @@ export interface TelegramCallbackRouterContext {
 	getViewerItemUrl?: (itemId: string) => string;
 
 	getContextPanelMenu: (chatId: number, menuId: string) => ContextPanelMenuStateLike | null;
-	createContextPanelMenu: (chatId: number, sessionId: string, page: number, pageSize: number) => string;
+	createContextPanelMenu: (
+		chatId: number,
+		sessionId: string,
+		page: number,
+		pageSize: number,
+		rowSemanticTurnIds: string[],
+	) => string;
 	listContextTurns: (
 		sessionId: string,
 		page: number,

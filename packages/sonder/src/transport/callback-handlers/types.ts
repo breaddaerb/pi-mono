@@ -35,6 +35,7 @@ export interface ContextPanelMenuStateLike {
 	sessionId: string;
 	page: number;
 	pageSize: number;
+	rowSemanticTurnIds: string[];
 }
 
 export interface DialogueTurnLike {

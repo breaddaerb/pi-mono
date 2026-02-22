@@ -46,7 +46,13 @@ export interface ContextControlCallbackContext {
 	argument: string;
 	getChatMode: (chatId: number) => ChatModeLike | undefined;
 	getContextPanelMenu: (chatId: number, menuId: string) => ContextPanelMenuStateLike | null;
-	createContextPanelMenu: (chatId: number, sessionId: string, page: number, pageSize: number) => string;
+	createContextPanelMenu: (
+		chatId: number,
+		sessionId: string,
+		page: number,
+		pageSize: number,
+		rowSemanticTurnIds: string[],
+	) => string;
 	listContextTurns: (sessionId: string, page: number, pageSize: number) => ContextPanelPageLike;
 	setContextTurnState: (sessionId: string, semanticTurnId: string, state: ContextTurnState) => boolean;
 	detachLastContextTurn: (sessionId: string) => string | null;
@@ -113,7 +119,13 @@ async function sendPanel(
 	pageSize: number,
 ): Promise<void> {
 	const pageData = context.listContextTurns(sessionId, page, pageSize);
-	const menuId = context.createContextPanelMenu(context.chatId, sessionId, pageData.page, pageData.pageSize);
+	const menuId = context.createContextPanelMenu(
+		context.chatId,
+		sessionId,
+		pageData.page,
+		pageData.pageSize,
+		pageData.turns.map((turn) => turn.semanticTurnId),
+	);
 	const rendered = context.renderContextPanel(menuId, pageData);
 	await context.sendMessage(context.chatId, rendered.text, { inlineKeyboard: rendered.inlineKeyboard });
 }
@@ -179,20 +191,26 @@ export async function handleContextControlCallback(context: ContextControlCallba
 		return true;
 	}
 
+	const snapshotTurnId = panelMenu.rowSemanticTurnIds[rowIndex];
+	if (!snapshotTurnId) {
+		await context.sendMessage(context.chatId, "Invalid context panel selection.");
+		return true;
+	}
+
 	const pageData = context.listContextTurns(panelMenu.sessionId, panelMenu.page, panelMenu.pageSize);
-	const target = pageData.turns[rowIndex];
-	if (!target) {
-		await context.sendMessage(context.chatId, "Turn not found on this context panel page.");
+	const currentTurnAtRow = pageData.turns[rowIndex];
+	if (!currentTurnAtRow || currentTurnAtRow.semanticTurnId !== snapshotTurnId) {
+		await context.sendMessage(context.chatId, "This context panel expired. Use Open Context Panel again.");
 		return true;
 	}
 
 	if (context.action === "ctxp_detach") {
-		context.setContextTurnState(panelMenu.sessionId, target.semanticTurnId, "DETACHED");
+		context.setContextTurnState(panelMenu.sessionId, snapshotTurnId, "DETACHED");
 		await sendPanel(context, panelMenu.sessionId, pageData.page, pageData.pageSize);
 		return true;
 	}
 
-	context.setContextTurnState(panelMenu.sessionId, target.semanticTurnId, "ACTIVE");
+	context.setContextTurnState(panelMenu.sessionId, snapshotTurnId, "ACTIVE");
 	await sendPanel(context, panelMenu.sessionId, pageData.page, pageData.pageSize);
 	return true;
 }

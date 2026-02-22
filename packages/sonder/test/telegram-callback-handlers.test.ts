@@ -312,7 +312,12 @@ function createContextControlContext(input: {
 			menuId: input.menuId ?? "ctx-menu",
 			argument: input.argument ?? "1",
 			getChatMode: () => input.activeMode,
-			getContextPanelMenu: () => ({ sessionId: "sess-1", page: 0, pageSize: 10 }),
+			getContextPanelMenu: () => ({
+				sessionId: "sess-1",
+				page: 0,
+				pageSize: 10,
+				rowSemanticTurnIds: ["u2", "u1"],
+			}),
 			createContextPanelMenu: () => "ctx-next",
 			listContextTurns: () => ({
 				sessionId: "sess-1",
@@ -600,5 +605,70 @@ describe("telegram callback handlers", () => {
 		expect(states).toEqual([{ sessionId: "sess-1", semanticTurnId: "u2", state: "DETACHED" }]);
 		expect(sent).toHaveLength(1);
 		expect(sent[0]?.text).toContain("Context panel");
+	});
+
+	it("does not apply stale panel row index to a different semantic turn", async () => {
+		const sent: SentMessage[] = [];
+		const states: Array<{ sessionId: string; semanticTurnId: string; state: "ACTIVE" | "DETACHED" }> = [];
+		const context: Parameters<typeof handleContextControlCallback>[0] = {
+			chatId: 77,
+			action: "ctxp_detach",
+			menuId: "ctx-stale",
+			argument: "1",
+			getChatMode: () => ({ mode: "item", itemId: "item-1", sessionId: "sess-1" }),
+			getContextPanelMenu: () => ({
+				sessionId: "sess-1",
+				page: 0,
+				pageSize: 2,
+				rowSemanticTurnIds: ["u2", "u1"],
+			}),
+			createContextPanelMenu: () => "ctx-next",
+			listContextTurns: () => ({
+				sessionId: "sess-1",
+				page: 0,
+				pageSize: 2,
+				total: 3,
+				totalPages: 2,
+				turns: [
+					{
+						semanticTurnId: "u3",
+						createdAt: "2026-02-18T00:02:00.000Z",
+						state: "ACTIVE",
+						summary: "newest",
+					},
+					{
+						semanticTurnId: "u2",
+						createdAt: "2026-02-18T00:01:00.000Z",
+						state: "ACTIVE",
+						summary: "second",
+					},
+				],
+			}),
+			setContextTurnState: (sessionId, semanticTurnId, state) => {
+				states.push({ sessionId, semanticTurnId, state });
+				return true;
+			},
+			detachLastContextTurn: () => "u3",
+			compileContextDump: () => ({
+				sessionId: "sess-1",
+				tokenBudget: 12000,
+				approxTotalTokens: 64,
+				compiledItems: [{ semanticTurnId: "u3", reason: "active", approxTokens: 64 }],
+				excludedItems: [],
+				compiledTextPreview: "user: newest",
+			}),
+			renderContextPanel: () => ({ text: "Context panel", inlineKeyboard: [] }),
+			splitForTelegram: (text) => [text],
+			sendMessage: async (chatId, text, options) => {
+				sent.push({ chatId, text, options });
+			},
+		};
+
+		const handled = await handleContextControlCallback(context);
+
+		expect(handled).toBe(true);
+		expect(states).toEqual([]);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]?.text).toContain("expired");
 	});
 });

@@ -313,8 +313,14 @@ export class TelegramRunnerCoordinator {
 		return this.options.menuStore.getHistoryMenu(chatId, menuId);
 	}
 
-	private createContextPanelMenu(chatId: number, sessionId: string, page: number, pageSize: number): string {
-		return this.options.menuStore.createContextPanelMenu(chatId, sessionId, page, pageSize);
+	private createContextPanelMenu(
+		chatId: number,
+		sessionId: string,
+		page: number,
+		pageSize: number,
+		rowSemanticTurnIds: string[],
+	): string {
+		return this.options.menuStore.createContextPanelMenu(chatId, sessionId, page, pageSize, rowSemanticTurnIds);
 	}
 
 	private getContextPanelMenu(chatId: number, menuId: string): ContextPanelMenuState | null {

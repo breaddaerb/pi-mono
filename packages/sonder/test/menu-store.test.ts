@@ -8,13 +8,14 @@ describe("telegram menu store", () => {
 		const sessionMenuId = store.createSessionMenu(1, "item-1", ["session-1"]);
 		const modelMenuId = store.createModelMenu(1, ["gpt-5.2"]);
 		const historyMenuId = store.createHistoryMenu(1, "session-1", 0, 8);
-		const contextMenuId = store.createContextPanelMenu(1, "session-1", 0, 10);
+		const contextMenuId = store.createContextPanelMenu(1, "session-1", 0, 10, ["u1", "u0"]);
 
 		expect(store.getItemMenu(1, itemMenuId)?.query).toBe("query");
 		expect(store.getSessionMenu(1, sessionMenuId)?.itemId).toBe("item-1");
 		expect(store.getModelMenu(1, modelMenuId)?.modelIds).toEqual(["gpt-5.2"]);
 		expect(store.getHistoryMenu(1, historyMenuId)?.sessionId).toBe("session-1");
 		expect(store.getContextPanelMenu(1, contextMenuId)?.sessionId).toBe("session-1");
+		expect(store.getContextPanelMenu(1, contextMenuId)?.rowSemanticTurnIds).toEqual(["u1", "u0"]);
 	});
 
 	it("expires menu entries based on ttl", () => {

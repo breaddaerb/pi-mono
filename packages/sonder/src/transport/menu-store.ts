@@ -53,6 +53,7 @@ export interface ContextPanelMenuState {
 	sessionId: string;
 	page: number;
 	pageSize: number;
+	rowSemanticTurnIds: string[];
 	createdAtMs: number;
 	expiresAtMs: number;
 }
@@ -163,7 +164,13 @@ export class TelegramMenuStore {
 		return this.getValidMenu(this.historyMenus, chatId, menuId);
 	}
 
-	createContextPanelMenu(chatId: number, sessionId: string, page: number, pageSize: number): string {
+	createContextPanelMenu(
+		chatId: number,
+		sessionId: string,
+		page: number,
+		pageSize: number,
+		rowSemanticTurnIds: string[],
+	): string {
 		const chatMenus = this.contextPanelMenus.get(chatId) ?? new Map<string, ContextPanelMenuState>();
 		const createdAtMs = this.now();
 		const menuId = randomUUID().slice(0, 8);
@@ -171,6 +178,7 @@ export class TelegramMenuStore {
 			sessionId,
 			page,
 			pageSize,
+			rowSemanticTurnIds,
 			createdAtMs,
 			expiresAtMs: createdAtMs + this.ttlMs,
 		});
