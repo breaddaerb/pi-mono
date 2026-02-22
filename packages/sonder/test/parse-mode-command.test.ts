@@ -7,10 +7,11 @@ describe("parseTelegramModeCommand", () => {
 		expect(parseTelegramModeCommand("/open item_123")).toEqual({ type: "open", itemId: "item_123" });
 	});
 
-	it("parses /exit, /where, /models", () => {
+	it("parses /exit, /where, /models, /context", () => {
 		expect(parseTelegramModeCommand("/exit")).toEqual({ type: "exit" });
 		expect(parseTelegramModeCommand("/where")).toEqual({ type: "where" });
 		expect(parseTelegramModeCommand("/models")).toEqual({ type: "models" });
+		expect(parseTelegramModeCommand("/context")).toEqual({ type: "context" });
 	});
 
 	it("parses /sessions and /history with optional args", () => {

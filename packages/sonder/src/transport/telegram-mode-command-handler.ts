@@ -190,6 +190,21 @@ export async function handleModeCommand(context: ModeCommandHandlerContext): Pro
 		return;
 	}
 
+	if (command.type === "context") {
+		const mode = context.getChatMode(chatId);
+		if (!mode || mode.mode !== "item") {
+			await context.sendMessage(chatId, "Context panel is available in item mode only. Use /open <itemId> first.");
+			return;
+		}
+		await context.sendMessage(chatId, "Context controls", {
+			inlineKeyboard: [
+				[{ text: "Open Context Panel", callbackData: buildCallbackPayload("ctx_panel", "ctx", 0) }],
+				[{ text: "Detach last turn", callbackData: buildCallbackPayload("ctx_detach_last", "ctx", 0) }],
+			],
+		});
+		return;
+	}
+
 	const resumed = context.resumeItemDialogue(command.sessionId);
 	context.setChatMode(chatId, {
 		mode: "item",

@@ -1,6 +1,7 @@
 import type { SonderApp, SonderCommandResult } from "../app/index.js";
 import type { ParsedTelegramModeCommand } from "../commands/parse-mode-command.js";
 import type {
+	ContextPanelMenuState,
 	HistoryMenuState,
 	ItemMenuEntry,
 	ItemMenuState,
@@ -58,6 +59,13 @@ export class TelegramRunnerCoordinator {
 				clearChatMode: this.clearChatMode.bind(this),
 				deleteItemAndNotify: this.deleteItemAndNotify.bind(this),
 				getViewerItemUrl: this.options.getViewerItemUrl,
+				getContextPanelMenu: this.getContextPanelMenu.bind(this),
+				createContextPanelMenu: this.createContextPanelMenu.bind(this),
+				listContextTurns: this.options.app.listContextTurns.bind(this.options.app),
+				setContextTurnState: this.options.app.setContextTurnState.bind(this.options.app),
+				detachLastContextTurn: this.options.app.detachLastContextTurn.bind(this.options.app),
+				compileContextDump: this.options.app.compileContextDump.bind(this.options.app),
+				renderContextPanel: this.renderContextPanel.bind(this),
 				getModelMenu: this.getModelMenu.bind(this),
 				getModelIdByIndex: (menu, argument) => this.getModelIdByIndex(menu as ModelMenuState, argument),
 				createModelMenu: this.createModelMenu.bind(this),
@@ -305,6 +313,70 @@ export class TelegramRunnerCoordinator {
 		return this.options.menuStore.getHistoryMenu(chatId, menuId);
 	}
 
+	private createContextPanelMenu(chatId: number, sessionId: string, page: number, pageSize: number): string {
+		return this.options.menuStore.createContextPanelMenu(chatId, sessionId, page, pageSize);
+	}
+
+	private getContextPanelMenu(chatId: number, menuId: string): ContextPanelMenuState | null {
+		return this.options.menuStore.getContextPanelMenu(chatId, menuId);
+	}
+
+	private buildContextPanelKeyboard(
+		menuId: string,
+		page: {
+			turns: Array<{ state: "ACTIVE" | "DETACHED" }>;
+		},
+	): TelegramInlineKeyboard {
+		const rows: TelegramInlineKeyboard = [];
+		for (let index = 0; index < page.turns.length; index++) {
+			const turn = page.turns[index];
+			rows.push([
+				{
+					text: turn?.state === "DETACHED" ? `${index + 1} Re-attach` : `${index + 1} Detach`,
+					callbackData: buildCallbackPayload(
+						turn?.state === "DETACHED" ? "ctxp_attach" : "ctxp_detach",
+						menuId,
+						index + 1,
+					),
+				},
+			]);
+		}
+		rows.push([
+			{ text: "Prev", callbackData: buildCallbackPayload("ctxp_prev", menuId, 0) },
+			{ text: "Next", callbackData: buildCallbackPayload("ctxp_next", menuId, 0) },
+		]);
+		rows.push([{ text: "Show ctx dump", callbackData: buildCallbackPayload("ctxp_dump", menuId, 0) }]);
+		return rows;
+	}
+
+	private renderContextPanel(
+		menuId: string,
+		page: {
+			sessionId: string;
+			page: number;
+			total: number;
+			totalPages: number;
+			turns: Array<{ createdAt: string; state: "ACTIVE" | "DETACHED"; summary: string }>;
+		},
+	): { text: string; inlineKeyboard: TelegramInlineKeyboard } {
+		const lines = page.turns.map((turn, index) => {
+			const stateLabel = turn.state === "DETACHED" ? "DETACHED" : "ACTIVE";
+			return `${index + 1}. [${stateLabel}] ${turn.summary}\n   ${formatDisplayTime(turn.createdAt)}`;
+		});
+		const text = [
+			`Context panel · ${page.sessionId}`,
+			`Turns: ${page.total} · page ${page.page + 1}/${Math.max(1, page.totalPages)}`,
+			"",
+			"Visible history is unchanged. Detached turns are excluded from next-round context.",
+			"",
+			lines.length > 0 ? lines.join("\n\n") : "(no turns yet)",
+		].join("\n");
+		return {
+			text,
+			inlineKeyboard: this.buildContextPanelKeyboard(menuId, page),
+		};
+	}
+
 	private getSessionIdByIndex(menu: SessionMenuState, argument: string): string | null {
 		const index = Number.parseInt(argument, 10);
 		if (!Number.isFinite(index) || index <= 0) {
@@ -366,6 +438,13 @@ export class TelegramRunnerCoordinator {
 			rows.push([{ text: `${index + 1} Full`, callbackData: buildCallbackPayload("hist_full", menuId, index + 1) }]);
 		}
 		return rows;
+	}
+
+	private buildItemReplyKeyboard(): TelegramInlineKeyboard {
+		return [
+			[{ text: "Open Context Panel", callbackData: buildCallbackPayload("ctx_panel", "ctx", 0) }],
+			[{ text: "Detach last turn", callbackData: buildCallbackPayload("ctx_detach_last", "ctx", 0) }],
+		];
 	}
 
 	private buildItemModeKeyboard(includeViewer: boolean): TelegramInlineKeyboard {
@@ -463,6 +542,7 @@ export class TelegramRunnerCoordinator {
 					setChatMode: this.setChatMode.bind(this),
 					formatContextualAnswer: this.formatContextualAnswer.bind(this),
 					splitForTelegram,
+					buildItemReplyKeyboard: this.buildItemReplyKeyboard.bind(this),
 					sendMessage: this.options.api.sendMessage.bind(this.options.api),
 				});
 			},

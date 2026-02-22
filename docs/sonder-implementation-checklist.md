@@ -35,6 +35,7 @@ These should remain true unless intentionally redesigned.
 - Command parsing is centralized in `src/commands` (core + mode commands)
 - Command dispatch uses exact command tokens (no prefix-style matching like `/saveX`)
 - `/ask` remains compatibility fallback; Telegram primary UX is open-first contextual asking
+- Context control supports session-scoped detach/reattach marks with compiled context projection (history remains intact)
 - Retrieval remains lean non-embedding for current phase
 
 ## 2) MVP acceptance gates (status)
@@ -49,6 +50,7 @@ These should remain true unless intentionally redesigned.
 - [x] Enter general dialogue via `/open` and run multi-turn chat
 - [x] Active dialogue mode/session survives process restart
 - [x] Discovery supports no-ID open flows (`/find`, `/list`, buttons)
+- [x] Context control allows detaching earlier turns from next-round context without deleting history
 - [x] Codex/OpenAI runtime path works end-to-end
 
 ## 3) Post-MVP quality checklist

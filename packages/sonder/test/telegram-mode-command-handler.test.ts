@@ -132,4 +132,16 @@ describe("telegram mode command handler", () => {
 		expect(state.opened).toHaveLength(1);
 		expect(state.opened[0]?.header).toContain("Item dialogue resumed");
 	});
+
+	it("shows context control shortcuts for /context in item mode", async () => {
+		const state = createModeContext({
+			command: { type: "context" },
+			mode: { mode: "item", itemId: "item-1", sessionId: "session-1" },
+		});
+		await handleModeCommand(state.context);
+
+		expect(state.sent).toHaveLength(1);
+		expect(state.sent[0]?.text).toContain("Context controls");
+		expect(state.sent[0]?.options?.inlineKeyboard?.[0]?.[0]?.text).toBe("Open Context Panel");
+	});
 });

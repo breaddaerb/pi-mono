@@ -4,6 +4,11 @@ export {
 	handleContextActionCallback,
 } from "./context.js";
 export {
+	type ContextControlCallbackAction,
+	type ContextControlCallbackContext,
+	handleContextControlCallback,
+} from "./context-control.js";
+export {
 	type DiscoveryItemCallbackAction,
 	type DiscoveryItemCallbackContext,
 	type DiscoveryMenuFilterAction,

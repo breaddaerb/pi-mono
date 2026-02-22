@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AskService, createDatabase } from "../src/index.js";
-import { AnnotationsRepo, ArtifactsRepo, DialogueRepo, ItemsRepo } from "../src/storage/index.js";
+import { AnnotationsRepo, ArtifactsRepo, ContextMarkRepo, DialogueRepo, ItemsRepo } from "../src/storage/index.js";
 import type { Annotation, Artifact, Item } from "../src/types.js";
 
 describe("AskService", () => {
@@ -102,6 +102,73 @@ describe("AskService", () => {
 		expect(turns[1].errorMessage).toBeNull();
 		expect(turns[1].thinking).toBeNull();
 
+		database.close();
+	});
+
+	it("excludes detached semantic turns from subsequent ask context", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-ask-"));
+		tempDirs.push(root);
+
+		const extractedPath = join(root, "data", "items", "item_ctx", "extracted.txt");
+		mkdirSync(dirname(extractedPath), { recursive: true });
+		writeFileSync(extractedPath, "Text", "utf8");
+
+		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
+		const itemsRepo = new ItemsRepo(database);
+		const artifactsRepo = new ArtifactsRepo(database);
+		const annotationsRepo = new AnnotationsRepo(database);
+		const dialogueRepo = new DialogueRepo(database);
+		const contextMarkRepo = new ContextMarkRepo(database);
+
+		itemsRepo.create({
+			id: "item_ctx",
+			createdAt: "2026-02-14T02:00:00.000Z",
+			sourceType: "web",
+			originalUrl: "https://example.com/context",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		artifactsRepo.create({
+			id: "art_ctx",
+			itemId: "item_ctx",
+			kind: "extracted-text",
+			path: extractedPath,
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: "2026-02-14T02:00:01.000Z",
+		});
+
+		const historyLengths: number[] = [];
+		const askService = new AskService({
+			itemsRepo,
+			artifactsRepo,
+			annotationsRepo,
+			dialogueRepo,
+			contextMarkRepo,
+			responder: async (input) => {
+				historyLengths.push(input.context.dialogueHistory.length);
+				return {
+					answer: `ok:${input.question}`,
+					model: "gpt-5",
+					provider: "openai-codex",
+					citations: [],
+				};
+			},
+		});
+
+		const first = await askService.ask("item_ctx", "q1");
+		contextMarkRepo.upsertState({
+			sessionId: first.sessionId,
+			semanticTurnId: first.userTurnId,
+			state: "DETACHED",
+			updatedAt: "2026-02-14T02:00:02.000Z",
+		});
+		await askService.askInSession("item_ctx", "q2", first.sessionId);
+
+		expect(historyLengths[0]).toBe(0);
+		expect(historyLengths[1]).toBe(0);
 		database.close();
 	});
 

@@ -99,6 +99,7 @@ SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890"
 /open [itemId]
 /sessions
 /history
+/context
 /where
 /models
 /exit
@@ -118,7 +119,7 @@ Tip: if Telegram sends `/save` immediately from command suggestions, Sonder will
 ```
 
 Telegram startup behavior:
-- Sonder registers slash-command suggestions via Telegram `setMyCommands` (`/save`, `/find`, `/list`, `/open`, `/sessions`, `/history`, `/where`, `/models`, `/exit`).
+- Sonder registers slash-command suggestions via Telegram `setMyCommands` (`/save`, `/find`, `/list`, `/open`, `/sessions`, `/history`, `/context`, `/where`, `/models`, `/exit`).
 
 ## Interaction map (recommended)
 
@@ -188,6 +189,18 @@ Behavior:
 - item dialogue turns are persisted separately in `dialogue_turns` and are not capped by these general-mode limits
 
 In item mode, action panel supports: `Open Viewer | Delete Item | Exit`.
+
+### H) Context control (detach-first MVP)
+
+- Use `/context` (in item mode) or reply quick actions on assistant answers:
+  - `Open Context Panel`
+  - `Detach last turn`
+- Context panel allows per-turn state toggles:
+  - `Detach` (exclude from next-round model context)
+  - `Re-attach` (include again)
+- Context state is session-scoped and restart-safe.
+- User-visible history stays complete; context control only changes what is projected into the next model call.
+- Panel tool `Show ctx dump` prints included/excluded turn reasons and compiled preview text.
 
 ### Context budget defaults (item dialogue)
 

@@ -105,4 +105,20 @@ ALTER TABLE dialogue_turns ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
 ALTER TABLE dialogue_turns ADD COLUMN error_message TEXT;
 `,
 	},
+	{
+		version: 5,
+		sql: `
+CREATE TABLE IF NOT EXISTS ctx_marks (
+	session_id TEXT NOT NULL,
+	semantic_turn_id TEXT NOT NULL,
+	state TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	updated_by TEXT,
+	PRIMARY KEY(session_id, semantic_turn_id),
+	FOREIGN KEY(session_id) REFERENCES dialogue_sessions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_ctx_marks_session_id_updated_at ON ctx_marks(session_id, updated_at);
+`,
+	},
 ];

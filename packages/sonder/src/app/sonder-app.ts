@@ -7,6 +7,8 @@ import {
 	AnnotationsRepo,
 	ArtifactsRepo,
 	ChatModeStateRepo,
+	ContextMarkRepo,
+	type ContextTurnState,
 	type CreateDatabaseOptions,
 	createDatabase,
 	DialogueRepo,
@@ -15,6 +17,7 @@ import {
 } from "../storage/index.js";
 import type { Annotation, DialogueTurnStatus, ItemSourceType } from "../types.js";
 import { AnnotationService } from "./annotation-service.js";
+import { ContextControlService } from "./context-control-service.js";
 import { DialogueService } from "./dialogue-service.js";
 import { DiscoveryService } from "./discovery-service.js";
 import {
@@ -57,6 +60,35 @@ export interface SonderDialogueTurnItem {
 	status: DialogueTurnStatus;
 	errorMessage: string | null;
 	createdAt: string;
+}
+
+export interface SonderContextTurnItem {
+	semanticTurnId: string;
+	createdAt: string;
+	state: ContextTurnState;
+	summary: string;
+}
+
+export interface SonderContextTurnPage {
+	sessionId: string;
+	page: number;
+	pageSize: number;
+	total: number;
+	totalPages: number;
+	turns: SonderContextTurnItem[];
+}
+
+export interface SonderContextDump {
+	sessionId: string;
+	tokenBudget: number;
+	approxTotalTokens: number;
+	compiledItems: Array<{ semanticTurnId: string; reason: "active"; approxTokens: number }>;
+	excludedItems: Array<{
+		semanticTurnId: string;
+		reason: "detached" | "pruned_active";
+		approxTokens: number;
+	}>;
+	compiledTextPreview: string;
 }
 
 export interface SonderAppPaths {
@@ -170,11 +202,13 @@ export class SonderApp {
 	readonly artifactsRepo: ArtifactsRepo;
 	readonly annotationsRepo: AnnotationsRepo;
 	readonly dialogueRepo: DialogueRepo;
+	readonly contextMarkRepo: ContextMarkRepo;
 	readonly askService: AskService;
 	readonly dataRootDir: string;
 	private readonly responder: AskResponder;
 	private readonly chatModeStateRepo: ChatModeStateRepo;
 	private readonly annotationService: AnnotationService;
+	private readonly contextControlService: ContextControlService;
 	private readonly dialogueService: DialogueService;
 	private readonly discoveryService: DiscoveryService;
 	private readonly saveService: SaveService;
@@ -190,6 +224,7 @@ export class SonderApp {
 		this.artifactsRepo = new ArtifactsRepo(this.database);
 		this.annotationsRepo = new AnnotationsRepo(this.database);
 		this.dialogueRepo = new DialogueRepo(this.database);
+		this.contextMarkRepo = new ContextMarkRepo(this.database);
 		this.chatModeStateRepo = new ChatModeStateRepo(this.database);
 		this.askService = new AskService(
 			{
@@ -197,6 +232,7 @@ export class SonderApp {
 				artifactsRepo: this.artifactsRepo,
 				annotationsRepo: this.annotationsRepo,
 				dialogueRepo: this.dialogueRepo,
+				contextMarkRepo: this.contextMarkRepo,
 				responder: options.responder,
 			},
 			{ persistThinking: options.persistThinking, now: options.now },
@@ -205,6 +241,11 @@ export class SonderApp {
 			annotationsRepo: this.annotationsRepo,
 			artifactsRepo: this.artifactsRepo,
 			itemsRepo: this.itemsRepo,
+			now: options.now,
+		});
+		this.contextControlService = new ContextControlService({
+			dialogueRepo: this.dialogueRepo,
+			contextMarkRepo: this.contextMarkRepo,
 			now: options.now,
 		});
 		this.dialogueService = new DialogueService({
@@ -241,6 +282,22 @@ export class SonderApp {
 
 	listDialogueHistory(sessionId: string, limit = 20): SonderDialogueTurnItem[] {
 		return this.dialogueService.listDialogueHistory(sessionId, limit);
+	}
+
+	listContextTurns(sessionId: string, page = 0, pageSize = 10): SonderContextTurnPage {
+		return this.contextControlService.listTurns(sessionId, page, pageSize);
+	}
+
+	setContextTurnState(sessionId: string, semanticTurnId: string, state: ContextTurnState): boolean {
+		return this.contextControlService.setTurnState(sessionId, semanticTurnId, state);
+	}
+
+	detachLastContextTurn(sessionId: string): string | null {
+		return this.contextControlService.detachLastTurn(sessionId);
+	}
+
+	compileContextDump(sessionId: string, tokenBudget: number): SonderContextDump {
+		return this.contextControlService.compileDump(sessionId, tokenBudget);
 	}
 
 	loadChatModeState(chatId: number): StoredChatModeState | null {

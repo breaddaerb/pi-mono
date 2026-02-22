@@ -31,6 +31,12 @@ export interface HistoryMenuStateLike {
 	pageSize: number;
 }
 
+export interface ContextPanelMenuStateLike {
+	sessionId: string;
+	page: number;
+	pageSize: number;
+}
+
 export interface DialogueTurnLike {
 	role: "user" | "assistant" | "system";
 	content: string;

@@ -1,7 +1,16 @@
 import { randomUUID } from "node:crypto";
-import type { AnnotationsRepo, ArtifactsRepo, DialogueRepo, ItemsRepo } from "../storage/index.js";
+import type {
+	AnnotationsRepo,
+	ArtifactsRepo,
+	ContextMarkRepo,
+	ContextTurnState,
+	DialogueRepo,
+	ItemsRepo,
+} from "../storage/index.js";
 import type { DialogueSession, DialogueTurn } from "../types.js";
 import { type AskContext, buildAskContext, renderAskPrompt } from "./context-builder.js";
+import { compileContextProjection } from "./context-compiler.js";
+import { buildSemanticTurns } from "./semantic-turn-service.js";
 
 export interface AskResponderInput {
 	itemId: string;
@@ -25,6 +34,7 @@ export interface AskServiceDependencies {
 	artifactsRepo: ArtifactsRepo;
 	annotationsRepo: AnnotationsRepo;
 	dialogueRepo: DialogueRepo;
+	contextMarkRepo?: ContextMarkRepo;
 	responder: AskResponder;
 }
 
@@ -32,6 +42,7 @@ export interface AskServiceOptions {
 	persistThinking?: boolean;
 	now?: () => Date;
 	maxExtractedTextCharacters?: number;
+	dialogueContextTokenBudget?: number;
 }
 
 export interface AskResult {
@@ -51,6 +62,7 @@ export class AskService {
 	private readonly persistThinking: boolean;
 	private readonly now: () => Date;
 	private readonly maxExtractedTextCharacters: number | undefined;
+	private readonly dialogueContextTokenBudget: number;
 
 	constructor(
 		private readonly dependencies: AskServiceDependencies,
@@ -61,6 +73,10 @@ export class AskService {
 		if (options.maxExtractedTextCharacters !== undefined) {
 			this.maxExtractedTextCharacters = Math.max(1, Math.floor(options.maxExtractedTextCharacters));
 		}
+		this.dialogueContextTokenBudget =
+			options.dialogueContextTokenBudget !== undefined && Number.isFinite(options.dialogueContextTokenBudget)
+				? Math.max(1, Math.floor(options.dialogueContextTokenBudget))
+				: 12_000;
 	}
 
 	async ask(itemId: string, question: string): Promise<AskResult> {
@@ -75,6 +91,13 @@ export class AskService {
 
 		const { session } = this.getOrCreateSession(itemId, sessionId);
 		const priorTurns = this.dependencies.dialogueRepo.listTurnsBySessionId(session.id);
+		const semanticTurns = buildSemanticTurns(priorTurns);
+		const stateBySemanticTurnId = this.buildContextStateMap(session.id);
+		const compiledContext = compileContextProjection({
+			semanticTurns,
+			stateBySemanticTurnId,
+			tokenBudget: this.dialogueContextTokenBudget,
+		});
 		const annotations = this.dependencies.annotationsRepo.listByItemId(itemId);
 		const artifacts = this.dependencies.artifactsRepo.listByItemId(itemId);
 		const extractedTextArtifact = artifacts.find((artifact) => artifact.kind === "extracted-text") ?? null;
@@ -82,7 +105,7 @@ export class AskService {
 		const context = buildAskContext({
 			item,
 			annotations,
-			dialogueTurns: priorTurns,
+			dialogueTurns: compiledContext.includedTurns,
 			extractedTextPath: extractedTextArtifact?.path ?? null,
 			maxExtractedTextCharacters: this.maxExtractedTextCharacters,
 		});
@@ -171,6 +194,15 @@ export class AskService {
 		}
 		const session = this.createSessionRecord(itemId);
 		return { sessionId: session.id, created: true };
+	}
+
+	private buildContextStateMap(sessionId: string): Map<string, ContextTurnState> {
+		const contextMarkRepo = this.dependencies.contextMarkRepo;
+		if (!contextMarkRepo) {
+			return new Map<string, ContextTurnState>();
+		}
+		const marks = contextMarkRepo.listBySessionId(sessionId);
+		return new Map<string, ContextTurnState>(marks.map((mark) => [mark.semanticTurnId, mark.state]));
 	}
 
 	private getOrCreateSession(

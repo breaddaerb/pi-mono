@@ -17,7 +17,12 @@ export interface ActiveModeMessageHandlerContext {
 	setChatMode: (chatId: number, mode: ChatModeState) => void;
 	formatContextualAnswer: (chatId: number, answer: string, itemId?: string) => string;
 	splitForTelegram: (text: string) => string[];
-	sendMessage: (chatId: number, text: string) => Promise<void>;
+	buildItemReplyKeyboard: () => Array<Array<{ text: string; callbackData: string }>>;
+	sendMessage: (
+		chatId: number,
+		text: string,
+		options?: { inlineKeyboard?: Array<Array<{ text: string; callbackData: string }>> },
+	) => Promise<void>;
 }
 
 export async function handleActiveModeMessage(context: ActiveModeMessageHandlerContext): Promise<void> {
@@ -28,8 +33,15 @@ export async function handleActiveModeMessage(context: ActiveModeMessageHandlerC
 			context.text,
 		);
 		const formatted = context.formatContextualAnswer(context.chatId, askResult.answer, askResult.itemId);
-		for (const chunk of context.splitForTelegram(formatted)) {
-			await context.sendMessage(context.chatId, chunk);
+		const chunks = context.splitForTelegram(formatted);
+		for (let index = 0; index < chunks.length; index++) {
+			const chunk = chunks[index];
+			const isLast = index === chunks.length - 1;
+			await context.sendMessage(
+				context.chatId,
+				chunk,
+				isLast ? { inlineKeyboard: context.buildItemReplyKeyboard() } : undefined,
+			);
 		}
 		return;
 	}

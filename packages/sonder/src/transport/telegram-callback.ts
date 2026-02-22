@@ -25,7 +25,14 @@ export type CallbackAction =
 	| "hist_full"
 	| "ctx_exit"
 	| "ctx_viewer"
-	| "ctx_del";
+	| "ctx_del"
+	| "ctx_panel"
+	| "ctx_detach_last"
+	| "ctxp_prev"
+	| "ctxp_next"
+	| "ctxp_detach"
+	| "ctxp_attach"
+	| "ctxp_dump";
 
 export interface CallbackPayload {
 	version: "v1";
@@ -62,6 +69,13 @@ const CALLBACK_ACTIONS = new Set<CallbackAction>([
 	"ctx_exit",
 	"ctx_viewer",
 	"ctx_del",
+	"ctx_panel",
+	"ctx_detach_last",
+	"ctxp_prev",
+	"ctxp_next",
+	"ctxp_detach",
+	"ctxp_attach",
+	"ctxp_dump",
 ]);
 
 export function parseCallbackPayload(data: string): CallbackPayload | null {

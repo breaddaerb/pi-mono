@@ -5,7 +5,8 @@ export type ParsedTelegramModeCommand =
 	| { type: "models" }
 	| { type: "sessions"; itemId?: string }
 	| { type: "resume"; sessionId: string }
-	| { type: "history"; sessionId?: string };
+	| { type: "history"; sessionId?: string }
+	| { type: "context" };
 
 function splitCommandParts(text: string): string[] {
 	return text
@@ -41,6 +42,9 @@ export function parseTelegramModeCommand(text: string): ParsedTelegramModeComman
 	}
 	if (command === "/history") {
 		return { type: "history", sessionId: parts[1] };
+	}
+	if (command === "/context") {
+		return { type: "context" };
 	}
 	return null;
 }

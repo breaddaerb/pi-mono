@@ -30,6 +30,27 @@ function createRouterContext(input: { data: string; overrides?: Partial<Telegram
 		clearChatMode: () => true,
 		deleteItemAndNotify: async () => {},
 		getViewerItemUrl: () => "http://viewer/item",
+		getContextPanelMenu: () => null,
+		createContextPanelMenu: () => "ctx-panel-next",
+		listContextTurns: () => ({
+			sessionId: "session-1",
+			page: 0,
+			pageSize: 10,
+			total: 0,
+			totalPages: 1,
+			turns: [],
+		}),
+		setContextTurnState: () => true,
+		detachLastContextTurn: () => null,
+		compileContextDump: () => ({
+			sessionId: "session-1",
+			tokenBudget: 12000,
+			approxTotalTokens: 0,
+			compiledItems: [],
+			excludedItems: [],
+			compiledTextPreview: "(empty)",
+		}),
+		renderContextPanel: () => ({ text: "context panel", inlineKeyboard: [] }),
 		getModelMenu: () => null,
 		getModelIdByIndex: () => null,
 		createModelMenu: () => "model-menu-next",
@@ -98,6 +119,20 @@ describe("telegram callback router", () => {
 
 		expect(state.sent).toHaveLength(1);
 		expect(state.sent[0]?.text).toContain("No active context");
+	});
+
+	it("routes context control callbacks via action registry", async () => {
+		const state = createRouterContext({
+			data: buildCallbackPayload("ctx_panel", "ctx", 0),
+			overrides: {
+				getChatMode: () => ({ mode: "item", itemId: "item-1", sessionId: "session-1" }),
+				renderContextPanel: () => ({ text: "Context panel", inlineKeyboard: [] }),
+			},
+		});
+		await routeTelegramCallback(state.context);
+
+		expect(state.sent).toHaveLength(1);
+		expect(state.sent[0]?.text).toContain("Context panel");
 	});
 
 	it("routes hist_back callbacks to history handler", async () => {

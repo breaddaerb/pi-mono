@@ -5,7 +5,11 @@ import {
 } from "../src/transport/telegram-active-mode-message-handler.js";
 import type { ChatModeState } from "../src/transport/telegram-mode-store.js";
 
-type SentMessage = { chatId: number; text: string };
+type SentMessage = {
+	chatId: number;
+	text: string;
+	options?: { inlineKeyboard?: Array<Array<{ text: string; callbackData: string }>> };
+};
 
 function createContext(input: { activeMode: ChatModeState; answer?: string; itemId?: string }): {
 	context: ActiveModeMessageHandlerContext;
@@ -38,8 +42,9 @@ function createContext(input: { activeMode: ChatModeState; answer?: string; item
 			formatContextualAnswer: (_chatId, answer, itemId) =>
 				itemId ? `item:${itemId}:${answer}` : `general:${answer}`,
 			splitForTelegram: (text) => [text],
-			sendMessage: async (chatId, text) => {
-				sent.push({ chatId, text });
+			buildItemReplyKeyboard: () => [[{ text: "Open Context Panel", callbackData: "ctx" }]],
+			sendMessage: async (chatId, text, options) => {
+				sent.push({ chatId, text, options });
 			},
 		},
 		sent,
@@ -60,7 +65,13 @@ describe("telegram active-mode message handler", () => {
 		expect(state.askCalls).toEqual([{ itemId: "item-1", sessionId: "session-1", message: "hello" }]);
 		expect(state.chatCalls).toHaveLength(0);
 		expect(state.setModes).toHaveLength(0);
-		expect(state.sent).toEqual([{ chatId: 7, text: "item:item-1:item response" }]);
+		expect(state.sent).toEqual([
+			{
+				chatId: 7,
+				text: "item:item-1:item response",
+				options: { inlineKeyboard: [[{ text: "Open Context Panel", callbackData: "ctx" }]] },
+			},
+		]);
 	});
 
 	it("handles general-mode messages and persists updated history", async () => {
@@ -81,6 +92,6 @@ describe("telegram active-mode message handler", () => {
 				{ role: "assistant", content: "general response" },
 			],
 		});
-		expect(state.sent).toEqual([{ chatId: 7, text: "general:general response" }]);
+		expect(state.sent).toEqual([{ chatId: 7, text: "general:general response", options: undefined }]);
 	});
 });

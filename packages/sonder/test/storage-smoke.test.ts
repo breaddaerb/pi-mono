@@ -6,6 +6,7 @@ import {
 	AnnotationsRepo,
 	ArtifactsRepo,
 	ChatModeStateRepo,
+	ContextMarkRepo,
 	createDatabase,
 	DialogueRepo,
 	getArtifactFilePath,
@@ -32,6 +33,7 @@ describe("storage smoke", () => {
 		const artifactsRepo = new ArtifactsRepo(database);
 		const annotationsRepo = new AnnotationsRepo(database);
 		const dialogueRepo = new DialogueRepo(database);
+		const contextMarkRepo = new ContextMarkRepo(database);
 		const chatModeStateRepo = new ChatModeStateRepo(database);
 
 		const item: Item = {
@@ -107,6 +109,14 @@ describe("storage smoke", () => {
 		expect(dialogueRepo.listSessionsByItemId(item.id)).toEqual([session]);
 		expect(dialogueRepo.findTurnById(turn.id)).toEqual(turn);
 		expect(dialogueRepo.listTurnsBySessionId(session.id)).toEqual([turn]);
+
+		contextMarkRepo.upsertState({
+			sessionId: session.id,
+			semanticTurnId: "turn_1",
+			state: "DETACHED",
+			updatedAt: "2026-02-14T01:00:05.000Z",
+		});
+		expect(contextMarkRepo.getState(session.id, "turn_1")).toBe("DETACHED");
 
 		chatModeStateRepo.upsert(
 			{

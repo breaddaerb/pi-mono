@@ -1217,6 +1217,63 @@ describe("TelegramBotRunner", () => {
 		app.close();
 	});
 
+	it("detaches last semantic turn from context via quick action callback", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
+		tempDirs.push(root);
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async (input) => ({
+				answer: `ctx-turns=${input.context.dialogueHistory.length}`,
+				model: "stub",
+				provider: "stub",
+				citations: [],
+			}),
+		});
+
+		app.itemsRepo.create({
+			id: "item_ctx_detach",
+			createdAt: new Date().toISOString(),
+			sourceType: "web",
+			originalUrl: "https://example.com/context-detach",
+			whyNote: null,
+			tags: [],
+			topic: null,
+			space: null,
+		});
+		app.artifactsRepo.create({
+			id: "art_ctx_detach",
+			itemId: "item_ctx_detach",
+			kind: "extracted-text",
+			path: join(root, "missing-context-detach.txt"),
+			mimeType: "text/plain",
+			version: 1,
+			createdAt: new Date().toISOString(),
+		});
+
+		const api = new FakeTelegramApi([
+			{ updateId: 1, type: "message", chatId: 88, text: "/open item_ctx_detach" },
+			{ updateId: 2, type: "message", chatId: 88, text: "q1" },
+			{
+				updateId: 3,
+				type: "callback",
+				chatId: 88,
+				callbackQueryId: "cb_ctx_detach_last",
+				data: "sx:v1:ctx_detach_last:ctx:0",
+			},
+			{ updateId: 4, type: "message", chatId: 88, text: "q2" },
+		]);
+		const runner = new TelegramBotRunner(api, app);
+		await runner.pollOnce();
+
+		expect(api.sent[1].text).toContain("ctx-turns=0");
+		expect(api.sent[1].inlineKeyboard?.[0]?.[0]?.text).toBe("Open Context Panel");
+		expect(api.sent[2].text).toContain("Detached most recent turn");
+		expect(api.sent[4].text).toContain("ctx-turns=0");
+		expect(api.answeredCallbackIds).toContain("cb_ctx_detach_last");
+		app.close();
+	});
+
 	it("supports item mode panel callbacks and contextual banner", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-telegram-"));
 		tempDirs.push(root);

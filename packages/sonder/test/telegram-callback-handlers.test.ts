@@ -3,6 +3,7 @@ import {
 	type HistoryCallbackAction,
 	type HistoryCallbackContext,
 	handleContextActionCallback,
+	handleContextControlCallback,
 	handleDiscoveryItemCallback,
 	handleDiscoveryMenuFilterCallback,
 	handleHistoryCallback,
@@ -277,6 +278,74 @@ function createContextActionContext(input: {
 	};
 }
 
+function createContextControlContext(input: {
+	action: "ctx_panel" | "ctx_detach_last" | "ctxp_prev" | "ctxp_next" | "ctxp_detach" | "ctxp_attach" | "ctxp_dump";
+	menuId?: string;
+	argument?: string;
+	activeMode?: { mode: "item"; itemId: string; sessionId: string } | undefined;
+}): {
+	context: Parameters<typeof handleContextControlCallback>[0];
+	sent: SentMessage[];
+	states: Array<{ sessionId: string; semanticTurnId: string; state: "ACTIVE" | "DETACHED" }>;
+} {
+	const sent: SentMessage[] = [];
+	const states: Array<{ sessionId: string; semanticTurnId: string; state: "ACTIVE" | "DETACHED" }> = [];
+	const list = [
+		{
+			semanticTurnId: "u2",
+			createdAt: "2026-02-18T00:00:00.000Z",
+			state: "ACTIVE" as const,
+			summary: "second",
+		},
+		{
+			semanticTurnId: "u1",
+			createdAt: "2026-02-17T00:00:00.000Z",
+			state: "DETACHED" as const,
+			summary: "first",
+		},
+	];
+
+	return {
+		context: {
+			chatId: 77,
+			action: input.action,
+			menuId: input.menuId ?? "ctx-menu",
+			argument: input.argument ?? "1",
+			getChatMode: () => input.activeMode,
+			getContextPanelMenu: () => ({ sessionId: "sess-1", page: 0, pageSize: 10 }),
+			createContextPanelMenu: () => "ctx-next",
+			listContextTurns: () => ({
+				sessionId: "sess-1",
+				page: 0,
+				pageSize: 10,
+				total: list.length,
+				totalPages: 1,
+				turns: list,
+			}),
+			setContextTurnState: (sessionId, semanticTurnId, state) => {
+				states.push({ sessionId, semanticTurnId, state });
+				return true;
+			},
+			detachLastContextTurn: () => "u2",
+			compileContextDump: () => ({
+				sessionId: "sess-1",
+				tokenBudget: 12000,
+				approxTotalTokens: 32,
+				compiledItems: [{ semanticTurnId: "u2", reason: "active", approxTokens: 32 }],
+				excludedItems: [{ semanticTurnId: "u1", reason: "detached", approxTokens: 20 }],
+				compiledTextPreview: "user: second",
+			}),
+			renderContextPanel: () => ({ text: "Context panel", inlineKeyboard: [] }),
+			splitForTelegram: (text) => [text],
+			sendMessage: async (chatId, text, options) => {
+				sent.push({ chatId, text, options });
+			},
+		},
+		sent,
+		states,
+	};
+}
+
 describe("telegram callback handlers", () => {
 	it("handles history full callback and sends full turn content", async () => {
 		const { context, sent } = createHistoryContext({ action: "hist_full", argument: "1" });
@@ -505,5 +574,31 @@ describe("telegram callback handlers", () => {
 		expect(handled).toBe(true);
 		expect(sent).toHaveLength(1);
 		expect(sent[0]?.text).toContain("/viewer/items/item-view");
+	});
+
+	it("opens context panel from item mode", async () => {
+		const { context, sent } = createContextControlContext({
+			action: "ctx_panel",
+			activeMode: { mode: "item", itemId: "item-1", sessionId: "sess-1" },
+		});
+		const handled = await handleContextControlCallback(context);
+
+		expect(handled).toBe(true);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]?.text).toContain("Context panel");
+	});
+
+	it("detaches context turn from panel row action", async () => {
+		const { context, sent, states } = createContextControlContext({
+			action: "ctxp_detach",
+			menuId: "ctx-menu",
+			argument: "1",
+		});
+		const handled = await handleContextControlCallback(context);
+
+		expect(handled).toBe(true);
+		expect(states).toEqual([{ sessionId: "sess-1", semanticTurnId: "u2", state: "DETACHED" }]);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]?.text).toContain("Context panel");
 	});
 });

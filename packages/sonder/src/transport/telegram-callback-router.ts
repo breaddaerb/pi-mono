@@ -1,5 +1,6 @@
 import type {
 	ChatModeLike,
+	ContextPanelMenuStateLike,
 	DialogueSessionInfoLike,
 	DialogueTurnLike,
 	HistoryMenuStateLike,
@@ -12,10 +13,12 @@ import type { TelegramRuntimeModelSelector } from "./telegram.js";
 import { type CallbackAction, type CallbackPayload, parseCallbackPayload } from "./telegram-callback.js";
 import {
 	type ContextCallbackAction,
+	type ContextControlCallbackAction,
 	type DiscoveryItemCallbackAction,
 	type DiscoveryMenuFilterAction,
 	type HistoryCallbackAction,
 	handleContextActionCallback,
+	handleContextControlCallback,
 	handleDiscoveryItemCallback,
 	handleDiscoveryMenuFilterCallback,
 	handleHistoryCallback,
@@ -40,6 +43,27 @@ function createContextActionHandler(action: ContextCallbackAction): TelegramCall
 			clearChatMode: context.clearChatMode,
 			deleteItemAndNotify: context.deleteItemAndNotify,
 			getViewerItemUrl: context.getViewerItemUrl,
+			sendMessage: context.sendMessage,
+		});
+	};
+}
+
+function createContextControlHandler(action: ContextControlCallbackAction): TelegramCallbackActionHandler {
+	return async (context, payload) => {
+		return handleContextControlCallback({
+			chatId: context.chatId,
+			action,
+			menuId: payload.menuId,
+			argument: payload.argument,
+			getChatMode: context.getChatMode,
+			getContextPanelMenu: context.getContextPanelMenu,
+			createContextPanelMenu: context.createContextPanelMenu,
+			listContextTurns: context.listContextTurns,
+			setContextTurnState: context.setContextTurnState,
+			detachLastContextTurn: context.detachLastContextTurn,
+			compileContextDump: context.compileContextDump,
+			renderContextPanel: context.renderContextPanel,
+			splitForTelegram: context.splitForTelegram,
 			sendMessage: context.sendMessage,
 		});
 	};
@@ -166,6 +190,13 @@ const CALLBACK_ACTION_HANDLERS: Record<CallbackAction, TelegramCallbackActionHan
 	ctx_exit: createContextActionHandler("ctx_exit"),
 	ctx_viewer: createContextActionHandler("ctx_viewer"),
 	ctx_del: createContextActionHandler("ctx_del"),
+	ctx_panel: createContextControlHandler("ctx_panel"),
+	ctx_detach_last: createContextControlHandler("ctx_detach_last"),
+	ctxp_prev: createContextControlHandler("ctxp_prev"),
+	ctxp_next: createContextControlHandler("ctxp_next"),
+	ctxp_detach: createContextControlHandler("ctxp_detach"),
+	ctxp_attach: createContextControlHandler("ctxp_attach"),
+	ctxp_dump: createContextControlHandler("ctxp_dump"),
 	model_set: createModelSetHandler(),
 	menu_time: createDiscoveryMenuFilterHandler("menu_time"),
 	menu_time_set: createDiscoveryMenuFilterHandler("menu_time_set"),
@@ -200,6 +231,49 @@ export interface TelegramCallbackRouterContext {
 	clearChatMode: (chatId: number) => boolean;
 	deleteItemAndNotify: (chatId: number, itemId: string) => Promise<void>;
 	getViewerItemUrl?: (itemId: string) => string;
+
+	getContextPanelMenu: (chatId: number, menuId: string) => ContextPanelMenuStateLike | null;
+	createContextPanelMenu: (chatId: number, sessionId: string, page: number, pageSize: number) => string;
+	listContextTurns: (
+		sessionId: string,
+		page: number,
+		pageSize: number,
+	) => {
+		sessionId: string;
+		page: number;
+		pageSize: number;
+		total: number;
+		totalPages: number;
+		turns: Array<{ semanticTurnId: string; createdAt: string; state: "ACTIVE" | "DETACHED"; summary: string }>;
+	};
+	setContextTurnState: (sessionId: string, semanticTurnId: string, state: "ACTIVE" | "DETACHED") => boolean;
+	detachLastContextTurn: (sessionId: string) => string | null;
+	compileContextDump: (
+		sessionId: string,
+		tokenBudget: number,
+	) => {
+		sessionId: string;
+		tokenBudget: number;
+		approxTotalTokens: number;
+		compiledItems: Array<{ semanticTurnId: string; reason: "active"; approxTokens: number }>;
+		excludedItems: Array<{
+			semanticTurnId: string;
+			reason: "detached" | "pruned_active";
+			approxTokens: number;
+		}>;
+		compiledTextPreview: string;
+	};
+	renderContextPanel: (
+		menuId: string,
+		page: {
+			sessionId: string;
+			page: number;
+			pageSize: number;
+			total: number;
+			totalPages: number;
+			turns: Array<{ semanticTurnId: string; createdAt: string; state: "ACTIVE" | "DETACHED"; summary: string }>;
+		},
+	) => { text: string; inlineKeyboard: InlineKeyboard };
 
 	getModelMenu: (chatId: number, menuId: string) => ModelMenuStateLike | null;
 	getModelIdByIndex: (menu: ModelMenuStateLike, argument: string) => string | null;

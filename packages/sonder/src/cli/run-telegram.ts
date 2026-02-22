@@ -26,6 +26,7 @@ export const DEFAULT_TELEGRAM_COMMAND_SUGGESTIONS: TelegramBotCommand[] = [
 	{ command: "open", description: "Open item mode or general chat" },
 	{ command: "sessions", description: "Show item dialogue sessions" },
 	{ command: "history", description: "Show dialogue history" },
+	{ command: "context", description: "Control next-round context" },
 	{ command: "where", description: "Show active mode/session" },
 	{ command: "models", description: "Switch Codex model" },
 	{ command: "exit", description: "Exit active mode" },

@@ -49,6 +49,14 @@ export interface HistoryMenuState {
 	expiresAtMs: number;
 }
 
+export interface ContextPanelMenuState {
+	sessionId: string;
+	page: number;
+	pageSize: number;
+	createdAtMs: number;
+	expiresAtMs: number;
+}
+
 interface ExpiringMenuState {
 	expiresAtMs: number;
 }
@@ -58,6 +66,7 @@ export class TelegramMenuStore {
 	private readonly sessionMenus = new Map<number, Map<string, SessionMenuState>>();
 	private readonly modelMenus = new Map<number, Map<string, ModelMenuState>>();
 	private readonly historyMenus = new Map<number, Map<string, HistoryMenuState>>();
+	private readonly contextPanelMenus = new Map<number, Map<string, ContextPanelMenuState>>();
 
 	constructor(
 		private readonly ttlMs: number,
@@ -152,6 +161,25 @@ export class TelegramMenuStore {
 
 	getHistoryMenu(chatId: number, menuId: string): HistoryMenuState | null {
 		return this.getValidMenu(this.historyMenus, chatId, menuId);
+	}
+
+	createContextPanelMenu(chatId: number, sessionId: string, page: number, pageSize: number): string {
+		const chatMenus = this.contextPanelMenus.get(chatId) ?? new Map<string, ContextPanelMenuState>();
+		const createdAtMs = this.now();
+		const menuId = randomUUID().slice(0, 8);
+		chatMenus.set(menuId, {
+			sessionId,
+			page,
+			pageSize,
+			createdAtMs,
+			expiresAtMs: createdAtMs + this.ttlMs,
+		});
+		this.contextPanelMenus.set(chatId, chatMenus);
+		return menuId;
+	}
+
+	getContextPanelMenu(chatId: number, menuId: string): ContextPanelMenuState | null {
+		return this.getValidMenu(this.contextPanelMenus, chatId, menuId);
 	}
 
 	private getValidMenu<T extends ExpiringMenuState>(
