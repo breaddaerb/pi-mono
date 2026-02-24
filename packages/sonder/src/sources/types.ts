@@ -28,7 +28,7 @@ export interface SourceCaptureDebug {
 	redirectChain: string[];
 }
 
-export type SourceAcquisitionMethod = "direct_fetch" | "reader_proxy" | "user_paste";
+export type SourceAcquisitionMethod = "direct_fetch" | "browser_fetch" | "reader_proxy" | "user_paste";
 
 export interface SourceAcquisitionArtifacts {
 	text?: string;

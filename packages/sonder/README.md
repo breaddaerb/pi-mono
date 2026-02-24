@@ -36,8 +36,9 @@ When status indicates the link is not usable, Sonder asks for pasted evidence un
 ### Acquisition policy (important)
 
 - Sonder always tries `direct_fetch` first.
-- If direct fetch is non-OK (for example `risk_control`, `login_required`, `forbidden`, `unsupported`), Sonder automatically tries `reader_proxy` via `https://r.jina.ai/<url>`.
-- If both fail, Sonder falls back to pasted-evidence flow (`/save <url> <pasted text>`).
+- For WeChat only, if direct fetch is non-OK, Sonder automatically tries `browser_fetch` (Playwright-backed, auto-detects local Chrome/Chromium; configurable via env) before proxy fallback.
+- If direct fetch (or optional browser fetch) is non-OK (for example `risk_control`, `login_required`, `forbidden`, `unsupported`), Sonder automatically tries `reader_proxy` via `https://r.jina.ai/<url>`.
+- If all attempts fail, Sonder falls back to pasted-evidence flow (`/save <url> <pasted text>`).
 
 URL/provenance behavior:
 - `item.originalUrl` remains the original URL you sent.
@@ -53,6 +54,7 @@ Source-specific summary:
   - then `reader_proxy` fallback when direct is non-OK
 - WeChat:
   - `direct_fetch` first with WeChat-specific browser-like profile, redirect tracing, cookie carry-over, and one profile retry
+  - automatic `browser_fetch` fallback (Playwright-backed browser render)
   - if still non-OK (for example `risk_control`), then `reader_proxy` fallback
 - Xiaohongshu:
   - `direct_fetch` first with boilerplate quality checks
@@ -150,7 +152,7 @@ Behavior:
 - Sonder stores pasted text as evidence (`evidence.md` + extracted text)
 - Viewer prefers pasted evidence content when available
 - Opens item mode immediately when pasted evidence is present
-- For non-OK direct acquisition outcomes (for example risk control/login walls), Sonder tries a `reader_proxy` fallback (`https://r.jina.ai/<url>`) before requiring pasted evidence
+- For non-OK direct acquisition outcomes (for WeChat, after automatic browser fallback), Sonder tries a `reader_proxy` fallback (`https://r.jina.ai/<url>`) before requiring pasted evidence
 - For some XHS pages classified as noisy/blocked, Sonder can auto-derive cleaned evidence text and route it through the same evidence path
 - If no usable evidence is available after fallback attempts, Sonder saves fallback metadata and asks you to re-send with pasted text
 
@@ -277,3 +279,5 @@ node dist/main.js --root ./.sonder-data /ask ITEM_ID "question"
 - `SONDER_CODEX_TOKEN` (optional when OAuth/session path is not available)
 - `SONDER_CODEX_MODEL` (optional)
 - `SONDER_CODEX_REASONING` (optional: `minimal|low|medium|high`)
+- `SONDER_WECHAT_BROWSER_EXECUTABLE_PATH` (optional: override auto-detected Chromium/Chrome executable path for WeChat browser fallback)
+- `SONDER_WECHAT_BROWSER_TIMEOUT_MS` (optional: navigation timeout for WeChat browser fallback; default `12000`)
