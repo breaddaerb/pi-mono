@@ -1,6 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import { ensureCanonicalContent } from "../canonical/index.js";
 import { type ParseTelegramCommandError, parseTelegramCommand } from "../commands/parse-command.js";
 import { type AskResponder, AskService } from "../runtime/ask-service.js";
 import {
@@ -12,10 +13,11 @@ import {
 	type CreateDatabaseOptions,
 	createDatabase,
 	DialogueRepo,
+	ItemContentRepo,
 	ItemsRepo,
 	type StoredChatModeState,
 } from "../storage/index.js";
-import type { Annotation, DialogueTurnStatus, ItemSourceType } from "../types.js";
+import type { Annotation, DialogueTurnStatus, ItemContent, ItemSourceType } from "../types.js";
 import { AnnotationService } from "./annotation-service.js";
 import { ContextControlService } from "./context-control-service.js";
 import { DialogueService } from "./dialogue-service.js";
@@ -200,6 +202,7 @@ export class SonderApp {
 	readonly database: DatabaseSync;
 	readonly itemsRepo: ItemsRepo;
 	readonly artifactsRepo: ArtifactsRepo;
+	readonly itemContentRepo: ItemContentRepo;
 	readonly annotationsRepo: AnnotationsRepo;
 	readonly dialogueRepo: DialogueRepo;
 	readonly contextMarkRepo: ContextMarkRepo;
@@ -222,6 +225,7 @@ export class SonderApp {
 		this.database = createDatabase({ databasePath } satisfies CreateDatabaseOptions);
 		this.itemsRepo = new ItemsRepo(this.database);
 		this.artifactsRepo = new ArtifactsRepo(this.database);
+		this.itemContentRepo = new ItemContentRepo(this.database);
 		this.annotationsRepo = new AnnotationsRepo(this.database);
 		this.dialogueRepo = new DialogueRepo(this.database);
 		this.contextMarkRepo = new ContextMarkRepo(this.database);
@@ -230,6 +234,7 @@ export class SonderApp {
 			{
 				itemsRepo: this.itemsRepo,
 				artifactsRepo: this.artifactsRepo,
+				itemContentRepo: this.itemContentRepo,
 				annotationsRepo: this.annotationsRepo,
 				dialogueRepo: this.dialogueRepo,
 				contextMarkRepo: this.contextMarkRepo,
@@ -255,13 +260,14 @@ export class SonderApp {
 		});
 		this.discoveryService = new DiscoveryService({
 			itemsRepo: this.itemsRepo,
-			artifactsRepo: this.artifactsRepo,
+			itemContentRepo: this.itemContentRepo,
 			annotationsRepo: this.annotationsRepo,
 		});
 		this.saveService = new SaveService({
 			database: this.database,
 			itemsRepo: this.itemsRepo,
 			artifactsRepo: this.artifactsRepo,
+			itemContentRepo: this.itemContentRepo,
 			dataRootDir: this.dataRootDir,
 			now: options.now,
 			snapshotFetchImpl: options.snapshotFetchImpl,
@@ -269,10 +275,12 @@ export class SonderApp {
 	}
 
 	openItemDialogue(itemId: string, preferredSessionId?: string): SonderDialogueSessionInfo {
+		this.ensureCanonicalItemContent(itemId);
 		return this.dialogueService.openItemDialogue(itemId, preferredSessionId);
 	}
 
 	createItemDialogue(itemId: string): SonderDialogueSessionInfo {
+		this.ensureCanonicalItemContent(itemId);
 		return this.dialogueService.createItemDialogue(itemId);
 	}
 
@@ -312,6 +320,18 @@ export class SonderApp {
 		return this.chatModeStateRepo.deleteByChatId(chatId);
 	}
 
+	ensureCanonicalItemContent(itemId: string): ItemContent {
+		const item = this.itemsRepo.findById(itemId);
+		if (!item) {
+			throw new Error(`Item not found: ${itemId}`);
+		}
+		return ensureCanonicalContent({
+			item,
+			artifactsRepo: this.artifactsRepo,
+			itemContentRepo: this.itemContentRepo,
+		});
+	}
+
 	hasItem(itemId: string): boolean {
 		return this.dialogueService.hasItem(itemId);
 	}
@@ -329,6 +349,7 @@ export class SonderApp {
 		tags?: string[];
 		anchor?: string;
 	}): SonderAnnotationItem {
+		this.ensureCanonicalItemContent(input.itemId);
 		const annotation = this.annotationService.create(input);
 		return this.toAnnotationItem(annotation);
 	}

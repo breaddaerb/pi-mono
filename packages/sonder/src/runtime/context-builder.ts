@@ -1,12 +1,10 @@
-import { readFileSync } from "node:fs";
-import { cleanExtractedTextForPlatform, detectSourcePlatform } from "../sources/utils.js";
 import type { Annotation, DialogueTurn, Item } from "../types.js";
 
 export interface AskContextInput {
 	item: Item;
 	annotations: Annotation[];
 	dialogueTurns: DialogueTurn[];
-	extractedTextPath: string | null;
+	canonicalMarkdown: string;
 	maxExtractedTextCharacters?: number;
 }
 
@@ -19,21 +17,14 @@ export interface AskContext {
 
 export const DEFAULT_MAX_EXTRACTED_TEXT_CHARACTERS = 50_000;
 
-function readExtractedText(item: Item, path: string | null, maxCharacters: number): string {
-	if (!path) {
+function readCanonicalText(markdown: string, maxCharacters: number): string {
+	if (!markdown) {
 		return "";
 	}
-	try {
-		const text = readFileSync(path, "utf8");
-		const platform = detectSourcePlatform(item.originalUrl);
-		const cleaned = cleanExtractedTextForPlatform(platform, text);
-		if (cleaned.length <= maxCharacters) {
-			return cleaned;
-		}
-		return cleaned.slice(0, maxCharacters);
-	} catch {
-		return "";
+	if (markdown.length <= maxCharacters) {
+		return markdown;
 	}
+	return markdown.slice(0, maxCharacters);
 }
 
 export function buildAskContext(input: AskContextInput): AskContext {
@@ -42,7 +33,7 @@ export function buildAskContext(input: AskContextInput): AskContext {
 		item: input.item,
 		annotationEvidence: input.annotations,
 		dialogueHistory: input.dialogueTurns,
-		extractedText: readExtractedText(input.item, input.extractedTextPath, maxCharacters),
+		extractedText: readCanonicalText(input.canonicalMarkdown, maxCharacters),
 	};
 }
 
@@ -70,7 +61,7 @@ export function renderAskPrompt(question: string, context: AskContext): string {
 		"Prior dialogue:",
 		dialogueLines.length > 0 ? dialogueLines.join("\n") : "- (none)",
 		"",
-		"Extracted text:",
+		"Canonical markdown:",
 		context.extractedText || "(empty)",
 		"",
 		`Question: ${question}`,

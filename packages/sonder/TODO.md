@@ -386,3 +386,94 @@ Goal: let users manually control model context in `/open` item dialogue mode wit
   - [x] Telegram context panel/quick-action integration tests
   - [x] ask-service context projection tests
 - [ ] Phase-2 follow-up (deferred): add `PINNED` state, panel single-message edit (`editMessageText`), and panel search
+
+## Milestone 24: Canonical Markdown Layer (foundation for future viewer)
+
+Objective: persist a deterministic `canonical_md` per item and enforce canonical-only rendering/anchoring going forward.
+
+### 24.1 Storage: item content read model
+
+- [x] Add SQLite migration: create `item_contents` table keyed by `item_id` with fields:
+  - [x] `canonical_md` (TEXT)
+  - [x] `canonical_version` (INT)
+  - [x] `canonical_generated_at` (timestamp TEXT)
+  - [x] (optional) raw attribution fields (`raw_type`, `raw_blob_path`, `raw_url`, `fetched_at`)
+- [x] Add `ItemContentRepo` (find/upsert) + export from `storage/index.ts`
+- [x] Extend storage smoke tests for item content round-trip + cascade delete
+
+### 24.2 Canonicalization module (pure, deterministic)
+
+- [x] Add module: `src/canonical/canonical-markdown.ts` (or similar) with:
+  - [x] `canonicalizeMarkdownV1(input: string): string`
+  - [x] `canonicalVersion = 1`
+- [x] Implement minimum normalization rules:
+  - [x] normalize line endings to `\n`
+  - [x] trim trailing whitespace
+  - [x] collapse multiple blank lines to a single blank line
+  - [x] trim leading/trailing blank lines
+- [x] Unit tests:
+  - [x] determinism (same input -> same output)
+  - [x] idempotence (`canonicalize(canonicalize(x)) === canonicalize(x)`)
+
+### 24.3 HTML -> Markdown v1 converter (stable > pretty)
+
+- [x] Pick deterministic HTML parsing strategy (in-house v1 converter)
+- [x] Implement HTML -> Markdown v1 with limited, stable tag support:
+  - [x] headings (`h1`-`h6`)
+  - [x] paragraphs + line breaks
+  - [x] lists (`ul/ol/li`)
+  - [x] links (`[text](url)`; resolve relative URLs against `item.originalUrl`)
+  - [x] code blocks (`pre/code` -> fenced blocks)
+  - [x] blockquotes (optional)
+- [x] Strip/ignore non-content tags (`script/style/noscript/svg/...`) deterministically
+- [x] Add converter tests with fixtures (links, lists, code)
+- [x] Refinement pass: improve paragraph/line splitting for irregular HTML structures while preserving deterministic output
+
+### 24.4 Canonical generation service (source selection + persistence)
+
+- [x] Implement `generateCanonicalMarkdownV1(...)` that selects the best available source:
+  - [x] prefer `evidence-md` when present (pasted evidence)
+  - [x] else use `snapshot-html` (HTML -> MD)
+  - [x] else fall back to `extracted-text` (plain text -> MD)
+- [x] Implement `ensureCanonical(itemId)` that:
+  - [x] reads current artifacts
+  - [x] generates canonical if missing
+  - [x] persists `canonical_md`, `canonical_version=1`, `canonical_generated_at`
+
+### 24.5 Save pipeline integration (new items)
+
+- [x] In `SaveService.save()`: generate and persist canonical content for every newly saved item (same DB transaction)
+- [x] Add tests: saving an item persists canonical content
+
+### 24.6 Lazy backfill (existing items; no backfill on /find)
+
+- [x] Trigger `ensureCanonical(itemId)` only when an item is:
+  - [x] opened (`/open`)
+  - [x] asked about (`AskService` item path)
+  - [x] annotated (viewer create annotation path, as needed)
+  - [x] rendered in viewer (`/viewer/items/:id/snapshot`)
+- [x] Keep `/find` read-only: do not generate canonical in discovery flows
+
+### 24.7 Hard rule: canonical-only rendering + anchoring
+
+- [x] Update viewer snapshot route to render `canonical_md` only (escaped HTML wrapper), never `snapshot-html`/`extracted-text`
+- [x] Update viewer server annotation-create fallback anchor builder to use canonical content (not extracted-text)
+- [x] Introduce a new anchor kind for canonical surface (e.g., `md-quote-v1`) for newly created annotations
+  - [x] keep resolving existing `html-quote-v1` anchors for legacy annotations
+- [x] Add viewer regression tests for canonical snapshot rendering + overlay behavior
+
+### 24.8 Runtime: ask context reads canonical content
+
+- [x] Update `AskService`/`buildAskContext` to include canonical markdown instead of extracted text artifact
+- [x] Add a canonical context character cap (analogous to `DEFAULT_MAX_EXTRACTED_TEXT_CHARACTERS`)
+- [x] Update ask-service tests accordingly
+
+### 24.9 Retrieval: use canonical content when available
+
+- [x] Update `DiscoveryService` to score/snippet against canonical content when present
+- [x] When canonical is missing, skip content scoring/snippets (URL/tags/annotations still apply)
+- [x] Update discovery-service tests for canonical-backed content matches
+
+### 24.10 Ops (optional)
+
+- [ ] Optional: add a one-shot CLI/backfill command to canonicalize all items offline (not used by Telegram flows)

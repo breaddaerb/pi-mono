@@ -4,7 +4,14 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { DialogueService } from "../src/app/dialogue-service.js";
 import { AskService } from "../src/runtime/ask-service.js";
-import { AnnotationsRepo, ArtifactsRepo, createDatabase, DialogueRepo, ItemsRepo } from "../src/storage/index.js";
+import {
+	AnnotationsRepo,
+	ArtifactsRepo,
+	createDatabase,
+	DialogueRepo,
+	ItemContentRepo,
+	ItemsRepo,
+} from "../src/storage/index.js";
 
 describe("DialogueService", () => {
 	const tempDirs: string[] = [];
@@ -21,6 +28,7 @@ describe("DialogueService", () => {
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
 		const artifactsRepo = new ArtifactsRepo(database);
+		const itemContentRepo = new ItemContentRepo(database);
 		const annotationsRepo = new AnnotationsRepo(database);
 		const dialogueRepo = new DialogueRepo(database);
 
@@ -50,6 +58,7 @@ describe("DialogueService", () => {
 			{
 				itemsRepo,
 				artifactsRepo,
+				itemContentRepo,
 				annotationsRepo,
 				dialogueRepo,
 				responder: async (input) => ({
@@ -95,11 +104,13 @@ describe("DialogueService", () => {
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
 		const artifactsRepo = new ArtifactsRepo(database);
+		const itemContentRepo = new ItemContentRepo(database);
 		const annotationsRepo = new AnnotationsRepo(database);
 		const dialogueRepo = new DialogueRepo(database);
 		const askService = new AskService({
 			itemsRepo,
 			artifactsRepo,
+			itemContentRepo,
 			annotationsRepo,
 			dialogueRepo,
 			responder: async () => ({

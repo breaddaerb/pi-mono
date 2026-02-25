@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import { CANONICAL_MARKDOWN_VERSION, htmlToMarkdownV1, plainTextToMarkdownV1 } from "../canonical/index.js";
 import {
 	captureFromSource,
 	type SourceAcquisitionMethod,
@@ -10,8 +11,9 @@ import {
 } from "../sources/index.js";
 import { cleanExtractedTextForPlatform } from "../sources/utils.js";
 import type { ArtifactsRepo } from "../storage/artifacts-repo.js";
+import type { ItemContentRepo } from "../storage/item-content-repo.js";
 import type { ItemsRepo } from "../storage/items-repo.js";
-import type { Artifact, Item } from "../types.js";
+import type { Artifact, Item, ItemContent } from "../types.js";
 
 export type SaveSourceStatus = SourceStatus;
 export type SaveSourceAcquisitionMethod = SourceAcquisitionMethod;
@@ -42,6 +44,7 @@ export interface SaveServiceOptions {
 	database: DatabaseSync;
 	itemsRepo: ItemsRepo;
 	artifactsRepo: ArtifactsRepo;
+	itemContentRepo: ItemContentRepo;
 	dataRootDir: string;
 	now?: () => Date;
 	snapshotFetchImpl?: typeof fetch;
@@ -136,11 +139,19 @@ export class SaveService {
 				);
 			}
 
+			const canonicalContent = this.createCanonicalContent({
+				item,
+				evidenceMdPath,
+				extractedTextPath,
+				snapshotHtmlPath: snapshot.snapshotHtmlPath,
+			});
+
 			this.withTransaction(() => {
 				this.options.itemsRepo.create(item);
 				for (const artifact of artifactsToPersist) {
 					this.options.artifactsRepo.create(artifact);
 				}
+				this.options.itemContentRepo.upsert(canonicalContent);
 			});
 
 			const evidenceType: SaveEvidenceType = usePastedEvidence
@@ -213,6 +224,40 @@ export class SaveService {
 		} catch {
 			return null;
 		}
+	}
+
+	private createCanonicalContent(input: {
+		item: Item;
+		evidenceMdPath: string | null;
+		extractedTextPath: string;
+		snapshotHtmlPath: string | null;
+	}): ItemContent {
+		let canonicalMd = "";
+		let rawType: ItemContent["rawType"] = "text";
+		let rawBlobPath: string | null = input.extractedTextPath;
+
+		if (input.evidenceMdPath) {
+			canonicalMd = plainTextToMarkdownV1(readFileSync(input.evidenceMdPath, "utf8"));
+			rawBlobPath = input.evidenceMdPath;
+		} else if (input.snapshotHtmlPath) {
+			const html = readFileSync(input.snapshotHtmlPath, "utf8");
+			canonicalMd = htmlToMarkdownV1(html, input.item.originalUrl);
+			rawType = "html";
+			rawBlobPath = input.snapshotHtmlPath;
+		} else {
+			canonicalMd = plainTextToMarkdownV1(readFileSync(input.extractedTextPath, "utf8"));
+		}
+
+		return {
+			itemId: input.item.id,
+			canonicalMd,
+			canonicalVersion: CANONICAL_MARKDOWN_VERSION,
+			canonicalGeneratedAt: this.getNowIsoString(),
+			rawType,
+			rawBlobPath,
+			rawUrl: input.item.originalUrl,
+			fetchedAt: input.item.createdAt,
+		};
 	}
 
 	private withTransaction<T>(action: () => T): T {

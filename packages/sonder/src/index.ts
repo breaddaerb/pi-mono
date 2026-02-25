@@ -12,6 +12,14 @@ export {
 	type SonderListItem,
 	type SonderProcessResult,
 } from "./app/index.js";
+export {
+	CANONICAL_MARKDOWN_VERSION,
+	canonicalizeMarkdownV1,
+	ensureCanonicalContent,
+	generateCanonicalContentForItem,
+	htmlToMarkdownV1,
+	plainTextToMarkdownV1,
+} from "./canonical/index.js";
 export { createResponderFromEnv } from "./cli/responder-from-env.js";
 export { runCommandOnce } from "./cli/run-once.js";
 export { type RunTelegramOptions, runTelegramCheckMode, runTelegramMode } from "./cli/run-telegram.js";
@@ -81,6 +89,7 @@ export {
 	DialogueRepo,
 	getArtifactFilePath,
 	getItemArtifactDirectory,
+	ItemContentRepo,
 	ItemsRepo,
 	type StoredChatModeState,
 } from "./storage/index.js";
@@ -96,11 +105,13 @@ export type {
 	AnnotationType,
 	Artifact,
 	ArtifactKind,
+	CanonicalRawType,
 	DialogueSession,
 	DialogueTurn,
 	DialogueTurnRole,
 	DialogueTurnStatus,
 	Item,
+	ItemContent,
 	ItemSourceType,
 } from "./types.js";
 export { type SonderViewerServer, type SonderViewerServerOptions, startViewerServer } from "./viewer/index.js";

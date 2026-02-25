@@ -121,4 +121,20 @@ CREATE TABLE IF NOT EXISTS ctx_marks (
 CREATE INDEX IF NOT EXISTS idx_ctx_marks_session_id_updated_at ON ctx_marks(session_id, updated_at);
 `,
 	},
+	{
+		version: 6,
+		sql: `
+CREATE TABLE IF NOT EXISTS item_contents (
+	item_id TEXT PRIMARY KEY,
+	canonical_md TEXT NOT NULL,
+	canonical_version INTEGER NOT NULL,
+	canonical_generated_at TEXT NOT NULL,
+	raw_type TEXT,
+	raw_blob_path TEXT,
+	raw_url TEXT,
+	fetched_at TEXT,
+	FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
+);
+`,
+	},
 ];

@@ -31,11 +31,7 @@ export function injectOverlayIntoSnapshotHtml(html: string, itemId: string): str
     return null;
   }
 
-  function findRangeAcrossTextNodes(root, target) {
-    if (!root || typeof target !== 'string' || target.length === 0) {
-      return null;
-    }
-
+  function buildFlatTextSegments(root) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const segments = [];
     let fullText = '';
@@ -50,37 +46,159 @@ export function injectOverlayIntoSnapshotHtml(html: string, itemId: string): str
       const end = fullText.length;
       segments.push({ node, start, end });
     }
+    return { segments, fullText };
+  }
 
+  function locateOffsetInSegments(segments, offset) {
+    for (const segment of segments) {
+      if (offset >= segment.start && offset <= segment.end) {
+        return {
+          node: segment.node,
+          offset: Math.max(0, Math.min(offset - segment.start, (segment.node.nodeValue || '').length)),
+        };
+      }
+    }
+    return null;
+  }
+
+  function rangeFromOffsets(segments, startOffset, endOffset) {
+    const startPosition = locateOffsetInSegments(segments, startOffset);
+    const endPosition = locateOffsetInSegments(segments, endOffset);
+    if (!startPosition || !endPosition) {
+      return null;
+    }
+    const range = document.createRange();
+    range.setStart(startPosition.node, startPosition.offset);
+    range.setEnd(endPosition.node, endPosition.offset);
+    return String(range).trim().length > 0 ? range : null;
+  }
+
+  function normalizeWhitespace(value) {
+    return String(value || '').replace(/s+/g, ' ').trim();
+  }
+
+  function buildNormalizedTextIndexMap(rawText) {
+    let normalized = '';
+    const rawIndexByNormalizedIndex = [];
+    let pendingSpace = false;
+
+    for (let index = 0; index < rawText.length; index += 1) {
+      const char = rawText[index];
+      if (/s/.test(char)) {
+        pendingSpace = true;
+        continue;
+      }
+      if (pendingSpace && normalized.length > 0) {
+        rawIndexByNormalizedIndex.push(index);
+        normalized += ' ';
+      }
+      pendingSpace = false;
+      rawIndexByNormalizedIndex.push(index);
+      normalized += char;
+    }
+
+    while (normalized.endsWith(' ')) {
+      normalized = normalized.slice(0, -1);
+      rawIndexByNormalizedIndex.pop();
+    }
+
+    return { normalized, rawIndexByNormalizedIndex };
+  }
+
+  function findBestNormalizedMatch(normalizedDocument, normalizedTarget, normalizedPrefix, normalizedSuffix) {
+    if (!normalizedTarget) {
+      return -1;
+    }
+
+    const matches = [];
+    let fromIndex = 0;
+    while (fromIndex <= normalizedDocument.length - normalizedTarget.length) {
+      const index = normalizedDocument.indexOf(normalizedTarget, fromIndex);
+      if (index < 0) {
+        break;
+      }
+      matches.push(index);
+      fromIndex = index + 1;
+    }
+
+    if (matches.length === 0) {
+      return -1;
+    }
+    if (!normalizedPrefix && !normalizedSuffix) {
+      return matches[0];
+    }
+
+    let bestIndex = matches[0];
+    let bestScore = -1;
+    for (const index of matches) {
+      let score = 0;
+      if (normalizedPrefix) {
+        const left = normalizedDocument.slice(Math.max(0, index - normalizedPrefix.length), index);
+        if (left === normalizedPrefix) {
+          score += 2;
+        }
+      }
+      if (normalizedSuffix) {
+        const rightStart = index + normalizedTarget.length;
+        const right = normalizedDocument.slice(rightStart, rightStart + normalizedSuffix.length);
+        if (right === normalizedSuffix) {
+          score += 2;
+        }
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    }
+
+    return bestIndex;
+  }
+
+  function findRangeAcrossTextNodes(root, target) {
+    if (!root || typeof target !== 'string' || target.length === 0) {
+      return null;
+    }
+
+    const { segments, fullText } = buildFlatTextSegments(root);
     const index = fullText.indexOf(target);
     if (index < 0) {
       return null;
     }
 
-    const rangeStart = index;
-    const rangeEnd = index + target.length;
+    return rangeFromOffsets(segments, index, index + target.length);
+  }
 
-    function locate(offset) {
-      for (const segment of segments) {
-        if (offset >= segment.start && offset <= segment.end) {
-          return {
-            node: segment.node,
-            offset: Math.max(0, Math.min(offset - segment.start, (segment.node.nodeValue || '').length)),
-          };
-        }
-      }
+  function findRangeAcrossTextNodesNormalized(root, target, prefix, suffix) {
+    if (!root || typeof target !== 'string' || target.length === 0) {
       return null;
     }
 
-    const startPosition = locate(rangeStart);
-    const endPosition = locate(rangeEnd);
-    if (!startPosition || !endPosition) {
+    const { segments, fullText } = buildFlatTextSegments(root);
+    const normalizedTarget = normalizeWhitespace(target);
+    if (!normalizedTarget) {
       return null;
     }
 
-    const range = document.createRange();
-    range.setStart(startPosition.node, startPosition.offset);
-    range.setEnd(endPosition.node, endPosition.offset);
-    return String(range).trim().length > 0 ? range : null;
+    const normalizedPrefix = normalizeWhitespace(prefix || '');
+    const normalizedSuffix = normalizeWhitespace(suffix || '');
+    const mapping = buildNormalizedTextIndexMap(fullText);
+    const normalizedIndex = findBestNormalizedMatch(
+      mapping.normalized,
+      normalizedTarget,
+      normalizedPrefix,
+      normalizedSuffix,
+    );
+    if (normalizedIndex < 0) {
+      return null;
+    }
+
+    const rawStart = mapping.rawIndexByNormalizedIndex[normalizedIndex];
+    const rawEndIndex = mapping.rawIndexByNormalizedIndex[normalizedIndex + normalizedTarget.length - 1];
+    if (typeof rawStart !== 'number' || typeof rawEndIndex !== 'number') {
+      return null;
+    }
+
+    return rangeFromOffsets(segments, rawStart, rawEndIndex + 1);
   }
 
   function parseAnchor(annotation) {
@@ -207,12 +325,20 @@ export function injectOverlayIntoSnapshotHtml(html: string, itemId: string): str
 
     let strategy = 'resolved-anchor';
     let range = getTextRangeFromSelector(anchor, text);
+    if (!range && anchor && typeof anchor.exact === 'string') {
+      range = findRangeAcrossTextNodes(document.body, anchor.exact);
+      strategy = 'resolved-fallback';
+    }
     if (!range) {
       range = findRangeAcrossTextNodes(document.body, text);
       strategy = 'resolved-fallback';
     }
     if (!range && anchor && typeof anchor.exact === 'string') {
-      range = findRangeAcrossTextNodes(document.body, anchor.exact);
+      range = findRangeAcrossTextNodesNormalized(document.body, anchor.exact, anchor.prefix, anchor.suffix);
+      strategy = 'resolved-fallback';
+    }
+    if (!range) {
+      range = findRangeAcrossTextNodesNormalized(document.body, text, anchor?.prefix, anchor?.suffix);
       strategy = 'resolved-fallback';
     }
     if (!range) {

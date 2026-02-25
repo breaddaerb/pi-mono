@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { ensureCanonicalContent } from "../canonical/index.js";
 import type {
 	AnnotationsRepo,
 	ArtifactsRepo,
 	ContextMarkRepo,
 	ContextTurnState,
 	DialogueRepo,
+	ItemContentRepo,
 	ItemsRepo,
 } from "../storage/index.js";
 import type { DialogueSession, DialogueTurn } from "../types.js";
@@ -32,6 +34,7 @@ export type AskResponder = (input: AskResponderInput) => Promise<AskResponderOut
 export interface AskServiceDependencies {
 	itemsRepo: ItemsRepo;
 	artifactsRepo: ArtifactsRepo;
+	itemContentRepo: ItemContentRepo;
 	annotationsRepo: AnnotationsRepo;
 	dialogueRepo: DialogueRepo;
 	contextMarkRepo?: ContextMarkRepo;
@@ -99,14 +102,18 @@ export class AskService {
 			tokenBudget: this.dialogueContextTokenBudget,
 		});
 		const annotations = this.dependencies.annotationsRepo.listByItemId(itemId);
-		const artifacts = this.dependencies.artifactsRepo.listByItemId(itemId);
-		const extractedTextArtifact = artifacts.find((artifact) => artifact.kind === "extracted-text") ?? null;
+		const canonicalContent = ensureCanonicalContent({
+			item,
+			artifactsRepo: this.dependencies.artifactsRepo,
+			itemContentRepo: this.dependencies.itemContentRepo,
+			now: this.now,
+		});
 
 		const context = buildAskContext({
 			item,
 			annotations,
 			dialogueTurns: compiledContext.includedTurns,
-			extractedTextPath: extractedTextArtifact?.path ?? null,
+			canonicalMarkdown: canonicalContent.canonicalMd,
 			maxExtractedTextCharacters: this.maxExtractedTextCharacters,
 		});
 		const prompt = renderAskPrompt(question, context);

@@ -18,7 +18,9 @@ These should remain true unless intentionally redesigned.
 - Source acquisition is strategy-based (`direct_fetch` first, then `reader_proxy` fallback on non-OK outcomes)
 - Save pipeline persists item/artifact metadata transactionally and cleans partial artifacts on failure
 - Annotations are DB entities (do not mutate snapshot artifacts)
-- Context order for ask/runtime: annotations -> dialogue history -> extracted text
+- Item content has deterministic canonical markdown persisted in `item_contents`
+- Rendering surfaces (Telegram/runtime context + viewer snapshot route) read canonical markdown, not raw extracted blobs
+- Context order for ask/runtime: annotations -> dialogue history -> canonical markdown
 - Dialogue turn lifecycle is explicit (`pending` -> `completed` or `failed`) and failures are persisted
 - Active per-chat mode/session is persisted and restored across restarts
 - Restored item-mode state is validated (item+session) and invalid state is auto-cleared

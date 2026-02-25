@@ -5,4 +5,5 @@ export { ChatModeStateRepo, type StoredChatModeState } from "./chat-mode-state-r
 export { type ContextMark, ContextMarkRepo, type ContextTurnState } from "./context-mark-repo.js";
 export { applyMigrations, type CreateDatabaseOptions, createDatabase } from "./db.js";
 export { DialogueRepo } from "./dialogue-repo.js";
+export { ItemContentRepo } from "./item-content-repo.js";
 export { ItemsRepo } from "./items-repo.js";

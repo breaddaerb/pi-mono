@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { extname } from "node:path";
 import type { SonderApp } from "../app/index.js";
 import type { AnnotationType } from "../types.js";
 import { renderViewerClientScript } from "./client-script.js";
@@ -97,20 +95,6 @@ function renderPlainTextSnapshotHtml(text: string): string {
 	return `<!doctype html><html><head><meta charset="utf-8"/><style>body{margin:0;padding:16px;font-family:Inter,system-ui,sans-serif;line-height:1.55;color:#1f2430;background:#fff}pre{margin:0;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}</style></head><body><pre>${escaped}</pre></body></html>`;
 }
 
-function getMimeTypeByPath(path: string): string {
-	const extension = extname(path).toLowerCase();
-	if (extension === ".html") {
-		return "text/html; charset=utf-8";
-	}
-	if (extension === ".txt") {
-		return "text/plain; charset=utf-8";
-	}
-	if (extension === ".json") {
-		return "application/json; charset=utf-8";
-	}
-	return "application/octet-stream";
-}
-
 function getDefaultColor(type: AnnotationType): string | null {
 	if (type === "highlight") {
 		return "#ffe58f";
@@ -137,7 +121,7 @@ function buildAnchorPayload(extractedText: string, selectedText: string): string
 	const suffixEnd = end >= 0 ? Math.min(normalizedDocument.length, end + 32) : 0;
 
 	return JSON.stringify({
-		kind: "html-quote-v1",
+		kind: "md-quote-v1",
 		exact: normalizedSelection,
 		prefix: start >= 0 ? normalizedDocument.slice(prefixStart, start) : "",
 		suffix: end >= 0 ? normalizedDocument.slice(end, suffixEnd) : "",
@@ -312,27 +296,9 @@ async function handleRequest(app: SonderApp, request: IncomingMessage, response:
 		const snapshotMatch = pathname.match(/^\/viewer\/items\/([^/]+)\/snapshot$/);
 		if (snapshotMatch) {
 			const itemId = decodeURIComponent(snapshotMatch[1]);
-			const artifacts = app.artifactsRepo.listByItemId(itemId);
-			const evidenceArtifact = artifacts.find((artifact) => artifact.kind === "evidence-md");
-			const snapshotArtifact = artifacts.find((artifact) => artifact.kind === "snapshot-html");
-			const extractedArtifact = artifacts.find((artifact) => artifact.kind === "extracted-text");
-			if (evidenceArtifact) {
-				const text = readFileSync(evidenceArtifact.path, "utf8");
-				respondHtml(response, 200, injectOverlayIntoSnapshotHtml(renderPlainTextSnapshotHtml(text), itemId));
-				return;
-			}
-			if (snapshotArtifact) {
-				const html = readFileSync(snapshotArtifact.path, "utf8");
-				response.writeHead(200, { "content-type": getMimeTypeByPath(snapshotArtifact.path) });
-				response.end(injectOverlayIntoSnapshotHtml(html, itemId));
-				return;
-			}
-			if (extractedArtifact) {
-				const text = readFileSync(extractedArtifact.path, "utf8");
-				respondHtml(response, 200, injectOverlayIntoSnapshotHtml(renderPlainTextSnapshotHtml(text), itemId));
-				return;
-			}
-			respondText(response, 404, `No snapshot artifacts for item: ${itemId}`);
+			const canonicalContent = app.ensureCanonicalItemContent(itemId);
+			const html = renderPlainTextSnapshotHtml(canonicalContent.canonicalMd);
+			respondHtml(response, 200, injectOverlayIntoSnapshotHtml(html, itemId));
 			return;
 		}
 
@@ -362,11 +328,8 @@ async function handleRequest(app: SonderApp, request: IncomingMessage, response:
 			const itemId = decodeURIComponent(annCreateMatch[1]);
 			const body = await readRequestBody(request);
 			const payload = parseCreatePayload(body);
-			const extractedTextArtifact = app.artifactsRepo
-				.listByItemId(itemId)
-				.find((artifact) => artifact.kind === "extracted-text");
-			const extractedText = extractedTextArtifact ? readFileSync(extractedTextArtifact.path, "utf8") : "";
-			const anchor = payload.anchor ?? buildAnchorPayload(extractedText, payload.text ?? "");
+			const canonicalContent = app.ensureCanonicalItemContent(itemId);
+			const anchor = payload.anchor ?? buildAnchorPayload(canonicalContent.canonicalMd, payload.text ?? "");
 			const annotation = app.createAnnotation({
 				itemId,
 				type: payload.type,

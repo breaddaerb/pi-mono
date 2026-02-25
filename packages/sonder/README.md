@@ -6,7 +6,8 @@ Telegram-first conversational PKM for item-anchored thinking.
 
 - Saves public web pages as durable local evidence (`snapshot.html + assets`, extracted text, fallback artifact)
 - Supports URL + pasted-text fallback evidence when source fetch is blocked/login-required
-- Lets you annotate saved snapshots in a local viewer (highlight / underline / note)
+- Generates deterministic canonical markdown per item as the stable read model for rendering/anchoring
+- Lets you annotate canonical markdown content in a local viewer (highlight / underline / note)
 - Runs multi-turn dialogue anchored to an item (citations are optional, not forced)
 - Persists dialogue sessions and active chat mode in SQLite (restart-safe)
 - Supports discovery via `/list` and `/find` with Telegram buttons (no ID-centric UX)
@@ -206,7 +207,7 @@ In item mode, action panel supports: `Open Viewer | Delete Item | Exit`.
 
 ### Context budget defaults (item dialogue)
 
-- Extracted-text context included in ask prompts is bounded by:
+- Canonical-markdown context included in ask prompts is bounded by:
   - `DEFAULT_MAX_EXTRACTED_TEXT_CHARACTERS = 50_000`
 - This is configurable at runtime in code via `AskServiceOptions.maxExtractedTextCharacters`
   (or direct `buildAskContext(..., maxExtractedTextCharacters)` usage).
@@ -214,11 +215,11 @@ In item mode, action panel supports: `Open Viewer | Delete Item | Exit`.
 ### G) Viewer loop
 
 1. In item mode, tap `Open Viewer`
-2. Select text in snapshot
+2. Select text in canonical markdown content
 3. Create highlight / underline; use each annotation card's inline note editor (`Add note` / `Edit note`)
 4. Ask follow-up questions in Telegram plain text
 
-Viewer note: snapshot rendering disables active scripts/iframes/refresh directives at view time to keep pages stable for reading and annotation.
+Viewer note: viewer rendering uses stored canonical markdown (`item_contents.canonical_md`) as the single read surface for annotation and display.
 
 Time display note:
 - Telegram and viewer UI timestamps are formatted in `Asia/Shanghai` (`UTC+8`) for consistent daily usage.

@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AskService, createDatabase } from "../src/index.js";
-import { AnnotationsRepo, ArtifactsRepo, ContextMarkRepo, DialogueRepo, ItemsRepo } from "../src/storage/index.js";
+import {
+	AnnotationsRepo,
+	ArtifactsRepo,
+	ContextMarkRepo,
+	DialogueRepo,
+	ItemContentRepo,
+	ItemsRepo,
+} from "../src/storage/index.js";
 import type { Annotation, Artifact, Item } from "../src/types.js";
 
 describe("AskService", () => {
@@ -26,6 +33,7 @@ describe("AskService", () => {
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
 		const artifactsRepo = new ArtifactsRepo(database);
+		const itemContentRepo = new ItemContentRepo(database);
 		const annotationsRepo = new AnnotationsRepo(database);
 		const dialogueRepo = new DialogueRepo(database);
 
@@ -71,6 +79,7 @@ describe("AskService", () => {
 		const askService = new AskService({
 			itemsRepo,
 			artifactsRepo,
+			itemContentRepo,
 			annotationsRepo,
 			dialogueRepo,
 			responder: async (input) => {
@@ -116,6 +125,7 @@ describe("AskService", () => {
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
 		const artifactsRepo = new ArtifactsRepo(database);
+		const itemContentRepo = new ItemContentRepo(database);
 		const annotationsRepo = new AnnotationsRepo(database);
 		const dialogueRepo = new DialogueRepo(database);
 		const contextMarkRepo = new ContextMarkRepo(database);
@@ -144,6 +154,7 @@ describe("AskService", () => {
 		const askService = new AskService({
 			itemsRepo,
 			artifactsRepo,
+			itemContentRepo,
 			annotationsRepo,
 			dialogueRepo,
 			contextMarkRepo,
@@ -183,6 +194,7 @@ describe("AskService", () => {
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
 		const artifactsRepo = new ArtifactsRepo(database);
+		const itemContentRepo = new ItemContentRepo(database);
 		const annotationsRepo = new AnnotationsRepo(database);
 		const dialogueRepo = new DialogueRepo(database);
 
@@ -210,6 +222,7 @@ describe("AskService", () => {
 		const askService = new AskService({
 			itemsRepo,
 			artifactsRepo,
+			itemContentRepo,
 			annotationsRepo,
 			dialogueRepo,
 			responder: async (input) => {
@@ -238,6 +251,7 @@ describe("AskService", () => {
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
 		const artifactsRepo = new ArtifactsRepo(database);
+		const itemContentRepo = new ItemContentRepo(database);
 		const annotationsRepo = new AnnotationsRepo(database);
 		const dialogueRepo = new DialogueRepo(database);
 
@@ -264,6 +278,7 @@ describe("AskService", () => {
 		const askService = new AskService({
 			itemsRepo,
 			artifactsRepo,
+			itemContentRepo,
 			annotationsRepo,
 			dialogueRepo,
 			responder: async () => ({
@@ -299,6 +314,7 @@ describe("AskService", () => {
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
 		const artifactsRepo = new ArtifactsRepo(database);
+		const itemContentRepo = new ItemContentRepo(database);
 		const annotationsRepo = new AnnotationsRepo(database);
 		const dialogueRepo = new DialogueRepo(database);
 
@@ -325,6 +341,7 @@ describe("AskService", () => {
 		const askService = new AskService({
 			itemsRepo,
 			artifactsRepo,
+			itemContentRepo,
 			annotationsRepo,
 			dialogueRepo,
 			responder: async () => {
@@ -355,6 +372,7 @@ describe("AskService", () => {
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
 		const artifactsRepo = new ArtifactsRepo(database);
+		const itemContentRepo = new ItemContentRepo(database);
 		const annotationsRepo = new AnnotationsRepo(database);
 		const dialogueRepo = new DialogueRepo(database);
 
@@ -382,6 +400,7 @@ describe("AskService", () => {
 			{
 				itemsRepo,
 				artifactsRepo,
+				itemContentRepo,
 				annotationsRepo,
 				dialogueRepo,
 				responder: async () => ({

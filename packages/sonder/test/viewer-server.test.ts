@@ -258,8 +258,7 @@ describe("viewer server", () => {
 			expect(snapshotHtml).toContain("sonder-overlay-script");
 			expect(snapshotHtml).toContain("findRangeAcrossTextNodes");
 			expect(snapshotHtml).toContain("Main claim lives here.");
-			expect(snapshotHtml).toContain("#js_content");
-			expect(snapshotHtml).toContain("visibility: visible !important");
+			expect(snapshotHtml).toContain("<pre>");
 			expect(snapshotHtml).not.toContain("document.body.innerHTML='blanked'");
 			expect(snapshotHtml).not.toContain("<iframe");
 			expect(snapshotHtml).not.toContain('http-equiv="refresh"');
@@ -282,7 +281,7 @@ describe("viewer server", () => {
 			});
 			expect(createResponse.status).toBe(201);
 			const created = (await createResponse.json()) as { id: string; anchor: string; tags: string[] };
-			expect(created.anchor).toContain("html-quote-v1");
+			expect(created.anchor).toContain("md-quote-v1");
 			expect(created.tags).toEqual(["thesis"]);
 
 			const annotationsResponse = await fetch(`${viewer.baseUrl}/viewer/api/items/item_view/annotations`);

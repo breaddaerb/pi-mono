@@ -10,6 +10,7 @@ describe("viewer overlay", () => {
 		expect(output).toContain('id="sonder-overlay-script"');
 		expect(output).toContain("/viewer/api/items/item-1/annotations");
 		expect(output).toContain("window.__sonderOverlayStatus");
+		expect(output).toContain("findRangeAcrossTextNodesNormalized");
 	});
 
 	it("sanitizes snapshot html before overlay injection", () => {

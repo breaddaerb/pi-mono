@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SaveService } from "../src/app/save-service.js";
-import { ArtifactsRepo, createDatabase, ItemsRepo } from "../src/storage/index.js";
+import { ArtifactsRepo, createDatabase, ItemContentRepo, ItemsRepo } from "../src/storage/index.js";
 
 interface TestServer {
 	baseUrl: string;
@@ -52,10 +52,12 @@ describe("SaveService", () => {
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
 		const artifactsRepo = new ArtifactsRepo(database);
+		const itemContentRepo = new ItemContentRepo(database);
 		const service = new SaveService({
 			database,
 			itemsRepo,
 			artifactsRepo,
+			itemContentRepo,
 			dataRootDir: join(root, "data"),
 		});
 
@@ -77,6 +79,9 @@ describe("SaveService", () => {
 			const artifacts = artifactsRepo.listByItemId(result.itemId);
 			expect(artifacts.some((artifact) => artifact.kind === "extracted-text")).toBe(true);
 			expect(artifacts.some((artifact) => artifact.kind === "acquisition-report")).toBe(true);
+			const canonical = itemContentRepo.findByItemId(result.itemId);
+			expect(canonical?.canonicalMd.length ?? 0).toBeGreaterThan(0);
+			expect(canonical?.canonicalVersion).toBe(1);
 		} finally {
 			database.close();
 			await server.close();
@@ -90,10 +95,12 @@ describe("SaveService", () => {
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
 		const artifactsRepo = new ArtifactsRepo(database);
+		const itemContentRepo = new ItemContentRepo(database);
 		const service = new SaveService({
 			database,
 			itemsRepo,
 			artifactsRepo,
+			itemContentRepo,
 			dataRootDir: join(root, "data"),
 			snapshotFetchImpl: async () =>
 				new Response("<html><body><h1>failure case</h1></body></html>", {

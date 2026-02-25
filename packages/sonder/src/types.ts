@@ -11,6 +11,19 @@ export interface Item {
 	space: string | null;
 }
 
+export type CanonicalRawType = "html" | "pdf" | "text";
+
+export interface ItemContent {
+	itemId: string;
+	canonicalMd: string;
+	canonicalVersion: number;
+	canonicalGeneratedAt: string;
+	rawType: CanonicalRawType | null;
+	rawBlobPath: string | null;
+	rawUrl: string | null;
+	fetchedAt: string | null;
+}
+
 export type ArtifactKind =
 	| "snapshot-html"
 	| "snapshot-assets"

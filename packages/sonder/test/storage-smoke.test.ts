@@ -11,9 +11,10 @@ import {
 	DialogueRepo,
 	getArtifactFilePath,
 	getItemArtifactDirectory,
+	ItemContentRepo,
 	ItemsRepo,
 } from "../src/storage/index.js";
-import type { Annotation, Artifact, DialogueSession, DialogueTurn, Item } from "../src/types.js";
+import type { Annotation, Artifact, DialogueSession, DialogueTurn, Item, ItemContent } from "../src/types.js";
 
 describe("storage smoke", () => {
 	const tempDirs: string[] = [];
@@ -33,6 +34,7 @@ describe("storage smoke", () => {
 		const artifactsRepo = new ArtifactsRepo(database);
 		const annotationsRepo = new AnnotationsRepo(database);
 		const dialogueRepo = new DialogueRepo(database);
+		const itemContentRepo = new ItemContentRepo(database);
 		const contextMarkRepo = new ContextMarkRepo(database);
 		const chatModeStateRepo = new ChatModeStateRepo(database);
 
@@ -97,6 +99,18 @@ describe("storage smoke", () => {
 		};
 		dialogueRepo.createTurn(turn);
 
+		const itemContent: ItemContent = {
+			itemId: item.id,
+			canonicalMd: "# Canonical\n\nWhy New Languages Work",
+			canonicalVersion: 1,
+			canonicalGeneratedAt: "2026-02-14T01:00:04.500Z",
+			rawType: "html",
+			rawBlobPath: artifact.path,
+			rawUrl: item.originalUrl,
+			fetchedAt: item.createdAt,
+		};
+		itemContentRepo.upsert(itemContent);
+
 		expect(itemsRepo.findById(item.id)).toEqual(item);
 		expect(itemsRepo.listRecent()).toEqual([item]);
 		expect(artifactsRepo.findById(artifact.id)).toEqual(artifact);
@@ -109,6 +123,7 @@ describe("storage smoke", () => {
 		expect(dialogueRepo.listSessionsByItemId(item.id)).toEqual([session]);
 		expect(dialogueRepo.findTurnById(turn.id)).toEqual(turn);
 		expect(dialogueRepo.listTurnsBySessionId(session.id)).toEqual([turn]);
+		expect(itemContentRepo.findByItemId(item.id)).toEqual(itemContent);
 
 		contextMarkRepo.upsertState({
 			sessionId: session.id,
@@ -136,6 +151,8 @@ describe("storage smoke", () => {
 		});
 		expect(chatModeStateRepo.deleteByChatId(42)).toBe(true);
 		expect(chatModeStateRepo.findByChatId(42)).toBeNull();
+		expect(itemsRepo.deleteById(item.id)).toBe(true);
+		expect(itemContentRepo.findByItemId(item.id)).toBeNull();
 
 		database.close();
 	});

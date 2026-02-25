@@ -437,7 +437,7 @@ export function renderViewerClientScript(): string {
         const start = normalizedText ? bodyText.indexOf(normalizedText) : -1;
         const end = start >= 0 ? start + normalizedText.length : -1;
         return {
-          kind: 'html-quote-v1',
+          kind: 'md-quote-v1',
           exact: normalizedText,
           prefix: start > 0 ? bodyText.slice(Math.max(0, start - 32), start) : '',
           suffix: end >= 0 ? bodyText.slice(end, Math.min(bodyText.length, end + 32)) : '',
@@ -479,7 +479,7 @@ export function renderViewerClientScript(): string {
         }
 
         if (!repairedRange || !matchedText) {
-          window.alert('Could not repair anchor from current snapshot text.');
+          window.alert('Could not repair anchor from current viewer text.');
           return;
         }
 
@@ -530,7 +530,7 @@ export function renderViewerClientScript(): string {
         return {
           text,
           anchor: JSON.stringify({
-            kind: 'html-quote-v1',
+            kind: 'md-quote-v1',
             exact: normalizedText,
             prefix: start > 0 ? bodyText.slice(Math.max(0, start - 32), start) : '',
             suffix: end >= 0 ? bodyText.slice(end, Math.min(bodyText.length, end + 32)) : '',

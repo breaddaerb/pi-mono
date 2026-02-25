@@ -1,7 +1,5 @@
-import { readFileSync } from "node:fs";
-import { cleanExtractedTextForPlatform, detectSourcePlatform } from "../sources/utils.js";
 import type { AnnotationsRepo } from "../storage/annotations-repo.js";
-import type { ArtifactsRepo } from "../storage/artifacts-repo.js";
+import type { ItemContentRepo } from "../storage/item-content-repo.js";
 import type { ItemsRepo } from "../storage/items-repo.js";
 import type { ItemSourceType } from "../types.js";
 
@@ -26,7 +24,7 @@ export interface DiscoveryFindItem {
 
 export interface DiscoveryServiceOptions {
 	itemsRepo: ItemsRepo;
-	artifactsRepo: ArtifactsRepo;
+	itemContentRepo: ItemContentRepo;
 	annotationsRepo: AnnotationsRepo;
 }
 
@@ -113,16 +111,16 @@ export class DiscoveryService {
 				}
 			}
 
-			const extractedText = this.readExtractedTextForItem(item.id, item.originalUrl);
-			if (extractedText.length > 0) {
-				const contentMatches = this.collectMatchedTerms(extractedText.toLowerCase(), queryTerms);
+			const canonicalContent = this.readCanonicalTextForItem(item.id);
+			if (canonicalContent.length > 0) {
+				const contentMatches = this.collectMatchedTerms(canonicalContent.toLowerCase(), queryTerms);
 				if (contentMatches.length > 0) {
 					score += contentMatches.length * 2;
-					if (extractedText.toLowerCase().includes(normalizedQuery)) {
+					if (canonicalContent.toLowerCase().includes(normalizedQuery)) {
 						score += 2;
 					}
 					reasonSet.add("content");
-					this.pushSnippet(snippets, "content", extractedText, contentMatches);
+					this.pushSnippet(snippets, "content", canonicalContent, contentMatches);
 				}
 			}
 
@@ -151,20 +149,12 @@ export class DiscoveryService {
 		return scored.slice(0, Math.max(1, Math.floor(limit)));
 	}
 
-	private readExtractedTextForItem(itemId: string, originalUrl: string): string {
-		const artifact = this.options.artifactsRepo
-			.listByItemId(itemId)
-			.find((candidate) => candidate.kind === "extracted-text");
-		if (!artifact) {
+	private readCanonicalTextForItem(itemId: string): string {
+		const content = this.options.itemContentRepo.findByItemId(itemId);
+		if (!content) {
 			return "";
 		}
-		try {
-			const rawText = readFileSync(artifact.path, "utf8");
-			const platform = detectSourcePlatform(originalUrl);
-			return cleanExtractedTextForPlatform(platform, rawText);
-		} catch {
-			return "";
-		}
+		return content.canonicalMd;
 	}
 
 	private extractQueryTerms(query: string): string[] {

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { DiscoveryService } from "../src/app/discovery-service.js";
-import { AnnotationsRepo, ArtifactsRepo, createDatabase, ItemsRepo } from "../src/storage/index.js";
+import { AnnotationsRepo, ArtifactsRepo, createDatabase, ItemContentRepo, ItemsRepo } from "../src/storage/index.js";
 
 describe("DiscoveryService", () => {
 	const tempDirs: string[] = [];
@@ -19,9 +19,9 @@ describe("DiscoveryService", () => {
 		tempDirs.push(root);
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
-		const artifactsRepo = new ArtifactsRepo(database);
+		const itemContentRepo = new ItemContentRepo(database);
 		const annotationsRepo = new AnnotationsRepo(database);
-		const service = new DiscoveryService({ itemsRepo, artifactsRepo, annotationsRepo });
+		const service = new DiscoveryService({ itemsRepo, itemContentRepo, annotationsRepo });
 
 		try {
 			itemsRepo.create({
@@ -60,8 +60,9 @@ describe("DiscoveryService", () => {
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
 		const artifactsRepo = new ArtifactsRepo(database);
+		const itemContentRepo = new ItemContentRepo(database);
 		const annotationsRepo = new AnnotationsRepo(database);
-		const service = new DiscoveryService({ itemsRepo, artifactsRepo, annotationsRepo });
+		const service = new DiscoveryService({ itemsRepo, itemContentRepo, annotationsRepo });
 
 		try {
 			itemsRepo.create({
@@ -73,6 +74,16 @@ describe("DiscoveryService", () => {
 				tags: ["agents"],
 				topic: null,
 				space: null,
+			});
+			itemContentRepo.upsert({
+				itemId: "item-rank-1",
+				canonicalMd: "agent memory systems and retrieval planning",
+				canonicalVersion: 1,
+				canonicalGeneratedAt: "2026-01-01T00:00:00.000Z",
+				rawType: "text",
+				rawBlobPath: join(root, "item-rank-1.txt"),
+				rawUrl: "https://example.com/agent-memory",
+				fetchedAt: "2026-01-01T00:00:00.000Z",
 			});
 			const extractedPath = join(root, "item-rank-1.txt");
 			writeFileSync(extractedPath, "agent memory systems and retrieval planning", "utf8");
@@ -108,6 +119,16 @@ describe("DiscoveryService", () => {
 				tags: [],
 				topic: null,
 				space: null,
+			});
+			itemContentRepo.upsert({
+				itemId: "item-rank-2",
+				canonicalMd: "brief notes unrelated to ranked memory signal",
+				canonicalVersion: 1,
+				canonicalGeneratedAt: "2026-01-03T00:00:00.000Z",
+				rawType: "text",
+				rawBlobPath: join(root, "item-rank-2.txt"),
+				rawUrl: "https://example.com/other-topic",
+				fetchedAt: "2026-01-03T00:00:00.000Z",
 			});
 			const extractedPath2 = join(root, "item-rank-2.txt");
 			writeFileSync(extractedPath2, "brief notes unrelated to ranked memory signal", "utf8");
