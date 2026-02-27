@@ -5,15 +5,19 @@ import type { DatabaseSync } from "node:sqlite";
 import { CANONICAL_MARKDOWN_VERSION, htmlToMarkdownV1, plainTextToMarkdownV1 } from "../canonical/index.js";
 import {
 	captureFromSource,
+	isAuthEligibleDomain,
+	normalizeAuthDomain,
 	type SourceAcquisitionMethod,
 	type SourcePlatform,
 	type SourceStatus,
 } from "../sources/index.js";
 import { cleanExtractedTextForPlatform } from "../sources/utils.js";
 import type { ArtifactsRepo } from "../storage/artifacts-repo.js";
+import type { CaptureAttemptRepo } from "../storage/capture-attempt-repo.js";
 import type { ItemContentRepo } from "../storage/item-content-repo.js";
+import type { ItemProvenanceRepo } from "../storage/item-provenance-repo.js";
 import type { ItemsRepo } from "../storage/items-repo.js";
-import type { Artifact, Item, ItemContent } from "../types.js";
+import type { Artifact, CaptureAttempt, EvidenceConfidence, Item, ItemContent, ItemProvenance } from "../types.js";
 
 export type SaveSourceStatus = SourceStatus;
 export type SaveSourceAcquisitionMethod = SourceAcquisitionMethod;
@@ -44,10 +48,13 @@ export interface SaveServiceOptions {
 	database: DatabaseSync;
 	itemsRepo: ItemsRepo;
 	artifactsRepo: ArtifactsRepo;
+	captureAttemptRepo: CaptureAttemptRepo;
+	itemProvenanceRepo: ItemProvenanceRepo;
 	itemContentRepo: ItemContentRepo;
 	dataRootDir: string;
 	now?: () => Date;
 	snapshotFetchImpl?: typeof fetch;
+	loadAuthStorageStateForDomain?: (domain: string) => string | null;
 }
 
 export class SaveService {
@@ -69,11 +76,13 @@ export class SaveService {
 		const itemDirectory = join(this.options.dataRootDir, "items", itemId);
 
 		try {
+			const authStorageStateJson = this.resolveAuthStorageStateForUrl(input.url);
 			const sourceCapture = await captureFromSource({
 				itemId,
 				url: input.url,
 				dataRootDir: this.options.dataRootDir,
 				fetchImpl: this.options.snapshotFetchImpl,
+				authStorageStateJson,
 			});
 			const snapshot = sourceCapture.snapshot;
 			const acquisitionReportPath = join(snapshot.itemDirectory, "acquisition-report.json");
@@ -138,6 +147,11 @@ export class SaveService {
 					this.createArtifact(itemId, "screenshot-fallback", snapshot.screenshotFallbackPath, "text/plain"),
 				);
 			}
+			const evidenceType: SaveEvidenceType = usePastedEvidence
+				? "pasted_text"
+				: sourceCapture.usable
+					? "snapshot"
+					: "fallback_text";
 
 			const canonicalContent = this.createCanonicalContent({
 				item,
@@ -145,20 +159,25 @@ export class SaveService {
 				extractedTextPath,
 				snapshotHtmlPath: snapshot.snapshotHtmlPath,
 			});
+			const captureAttempts = this.buildCaptureAttempts(itemId, sourceCapture);
+			const itemProvenance = this.buildItemProvenance({
+				item,
+				sourceCapture,
+				evidenceType,
+				captureAttempts,
+			});
 
 			this.withTransaction(() => {
 				this.options.itemsRepo.create(item);
 				for (const artifact of artifactsToPersist) {
 					this.options.artifactsRepo.create(artifact);
 				}
+				for (const captureAttempt of captureAttempts) {
+					this.options.captureAttemptRepo.create(captureAttempt);
+				}
+				this.options.itemProvenanceRepo.upsert(itemProvenance);
 				this.options.itemContentRepo.upsert(canonicalContent);
 			});
-
-			const evidenceType: SaveEvidenceType = usePastedEvidence
-				? "pasted_text"
-				: sourceCapture.usable
-					? "snapshot"
-					: "fallback_text";
 
 			return {
 				itemId,
@@ -224,6 +243,106 @@ export class SaveService {
 		} catch {
 			return null;
 		}
+	}
+
+	private resolveAuthStorageStateForUrl(url: string): string | null {
+		if (!this.options.loadAuthStorageStateForDomain) {
+			return null;
+		}
+		if (!isAuthEligibleDomain(url)) {
+			return null;
+		}
+		const domain = normalizeAuthDomain(url);
+		if (!domain) {
+			return null;
+		}
+		try {
+			return this.options.loadAuthStorageStateForDomain(domain);
+		} catch {
+			return null;
+		}
+	}
+
+	private buildCaptureAttempts(
+		itemId: string,
+		sourceCapture: {
+			attempts: Array<{
+				method: SaveSourceAcquisitionMethod;
+				inputUrl: string;
+				effectiveUrl: string;
+				status: SaveSourceStatus;
+				reasonCode: string | null;
+				reasonHint: string | null;
+				artifacts: { text?: string; markdown?: string; html?: string };
+				debug: {
+					httpStatus: number | null;
+					contentType: string | null;
+					finalUrl: string | null;
+					redirectChain: string[];
+				} | null;
+			}>;
+		},
+	): CaptureAttempt[] {
+		return sourceCapture.attempts.map((attempt, index) => ({
+			id: randomUUID(),
+			itemId,
+			attemptOrder: index + 1,
+			attemptType: attempt.method,
+			requestUrl: attempt.effectiveUrl,
+			status: attempt.status,
+			reason: attempt.reasonHint ?? attempt.reasonCode,
+			httpStatus: attempt.debug?.httpStatus ?? null,
+			latencyMs: null,
+			metaJson: JSON.stringify({
+				inputUrl: attempt.inputUrl,
+				effectiveUrl: attempt.effectiveUrl,
+				reasonCode: attempt.reasonCode,
+				reasonHint: attempt.reasonHint,
+				artifacts: attempt.artifacts,
+				debug: attempt.debug,
+			}),
+			createdAt: this.getNowIsoString(),
+		}));
+	}
+
+	private buildItemProvenance(input: {
+		item: Item;
+		sourceCapture: {
+			acquisitionMethod: SaveSourceAcquisitionMethod;
+			status: SaveSourceStatus;
+		};
+		evidenceType: SaveEvidenceType;
+		captureAttempts: CaptureAttempt[];
+	}): ItemProvenance {
+		const winnerAttempt =
+			input.captureAttempts.find((attempt) => attempt.attemptType === input.sourceCapture.acquisitionMethod) ?? null;
+		return {
+			itemId: input.item.id,
+			originalUrl: input.item.originalUrl,
+			captureMethod: input.sourceCapture.acquisitionMethod,
+			winnerAttemptId: winnerAttempt?.id ?? null,
+			evidenceConfidence: this.classifyEvidenceConfidence(input.evidenceType, input.sourceCapture.acquisitionMethod),
+			capturedAt: input.item.createdAt,
+		};
+	}
+
+	private classifyEvidenceConfidence(
+		evidenceType: SaveEvidenceType,
+		captureMethod: SaveSourceAcquisitionMethod,
+	): EvidenceConfidence {
+		if (evidenceType === "pasted_text") {
+			return "low";
+		}
+		if (captureMethod === "direct_fetch") {
+			return "high";
+		}
+		if (captureMethod === "browser_fetch" || captureMethod === "auth_browser_fetch") {
+			return "medium";
+		}
+		if (captureMethod === "reader_proxy") {
+			return "medium";
+		}
+		return "low";
 	}
 
 	private createCanonicalContent(input: {

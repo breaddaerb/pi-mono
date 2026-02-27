@@ -21,6 +21,7 @@ const DEFAULT_ROOT_DIR = ".sonder";
 
 export const DEFAULT_TELEGRAM_COMMAND_SUGGESTIONS: TelegramBotCommand[] = [
 	{ command: "save", description: "Save URL with optional tags/text" },
+	{ command: "auth", description: "Auth session list/status/logout" },
 	{ command: "find", description: "Search saved items" },
 	{ command: "list", description: "List recent items" },
 	{ command: "open", description: "Open item mode or general chat" },
@@ -77,6 +78,9 @@ function usage(): string {
 		"  SONDER_TELEGRAM_BOT_TOKEN=<bot-token>",
 		"  SONDER_TELEGRAM_PROXY=<proxy-url> (optional)",
 		"  SONDER_VIEWER_PORT=<port> (optional, local snapshot viewer)",
+		"  SONDER_AUTH_ENCRYPTION_KEY=<secret> (optional, enables auth sessions)",
+		"  SONDER_AUTH_STATE_DIR=<dir> (optional, encrypted auth state files path)",
+		"  SONDER_AUTH_BROWSER_EXECUTABLE_PATH=<path> (optional, headed login browser)",
 	].join("\n");
 }
 
@@ -146,9 +150,19 @@ export async function runTelegramMode(
 	}
 
 	const runtimeResponder = createRuntimeResponderFromEnv(process.env);
+	const authEncryptionKey = process.env.SONDER_AUTH_ENCRYPTION_KEY?.trim();
+	const authStateDir = process.env.SONDER_AUTH_STATE_DIR?.trim();
+	const authBrowserExecutablePath = process.env.SONDER_AUTH_BROWSER_EXECUTABLE_PATH?.trim();
 	const app = new SonderApp({
 		paths: { rootDir: parsed.rootDir },
 		responder: runtimeResponder.responder,
+		auth: authEncryptionKey
+			? {
+					encryptionKey: authEncryptionKey,
+					stateDir: authStateDir || undefined,
+					browserExecutablePath: authBrowserExecutablePath || undefined,
+				}
+			: undefined,
 	});
 
 	const proxyUrl = getProxyUrl(process.env);

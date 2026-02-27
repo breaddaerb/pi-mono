@@ -16,7 +16,12 @@ These should remain true unless intentionally redesigned.
 - Usable `text/plain`/markdown captures are accepted as text evidence (not auto-marked blocked)
 - WeChat capture classifies verification/captcha walls as `risk_control` with redirect/debug diagnostics
 - Source acquisition is strategy-based (`direct_fetch` first, then `reader_proxy` fallback on non-OK outcomes)
+- Source acquisition supports optional `auth_browser_fetch` fallback for auth-eligible domains when non-OK outcomes persist and auth state is available
 - Save pipeline persists item/artifact metadata transactionally and cleans partial artifacts on failure
+- Authenticated-capture storage model exists (`auth_sessions`, `capture_attempts`, `item_provenance`) with item-linked cascade semantics
+- Auth session lifecycle foundation exists with domain policy + encrypted storage-state persistence + status/revoke flow
+- Telegram/CLI expose auth session commands (`/auth login|done|cancel|status|list|logout|login-file`) for user-mediated capture setup
+- Save pipeline persists ordered `capture_attempts` and per-item `item_provenance` with evidence confidence
 - Annotations are DB entities (do not mutate snapshot artifacts)
 - Item content has deterministic canonical markdown persisted in `item_contents`
 - Rendering surfaces (Telegram/runtime context + viewer snapshot route) read canonical markdown, not raw extracted blobs
@@ -78,6 +83,10 @@ These should remain true unless intentionally redesigned.
 
 ### 3.3 Reliability/operations
 
+- [x] Authenticated-capture storage foundations added (auth sessions + capture attempts + item provenance)
+- [x] Auth session manager foundation added (encrypted state at rest + status/list/load/logout APIs)
+- [x] Auth browser fallback + provenance persistence foundation added (`auth_browser_fetch` + save-service capture/provenance writes)
+- [x] Interactive auth bootstrap flow added (`/auth login` opens local browser, `/auth done` captures storage state)
 - [ ] Retry policy for capture/search/model calls
 - [ ] Per-chat queue + backpressure controls
 - [ ] Structured logs/event tracing

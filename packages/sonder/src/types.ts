@@ -24,6 +24,59 @@ export interface ItemContent {
 	fetchedAt: string | null;
 }
 
+export type AuthSessionStatus = "active" | "expired" | "revoked" | "error";
+
+export interface AuthSession {
+	id: string;
+	domain: string;
+	status: AuthSessionStatus;
+	storageStatePath: string;
+	createdAt: string;
+	updatedAt: string;
+	lastValidatedAt: string | null;
+	expiresAt: string | null;
+	lastError: string | null;
+}
+
+export type CaptureMethod = "direct_fetch" | "browser_fetch" | "reader_proxy" | "user_paste" | "auth_browser_fetch";
+
+export type CaptureAttemptStatus =
+	| "ok"
+	| "risk_control"
+	| "login_required"
+	| "not_found"
+	| "forbidden"
+	| "unsupported"
+	| "blocked"
+	| "timeout"
+	| "fetch_failed"
+	| "error";
+
+export interface CaptureAttempt {
+	id: string;
+	itemId: string;
+	attemptOrder: number;
+	attemptType: CaptureMethod;
+	requestUrl: string;
+	status: CaptureAttemptStatus;
+	reason: string | null;
+	httpStatus: number | null;
+	latencyMs: number | null;
+	metaJson: string;
+	createdAt: string;
+}
+
+export type EvidenceConfidence = "high" | "medium" | "low";
+
+export interface ItemProvenance {
+	itemId: string;
+	originalUrl: string;
+	captureMethod: CaptureMethod;
+	winnerAttemptId: string | null;
+	evidenceConfidence: EvidenceConfidence;
+	capturedAt: string;
+}
+
 export type ArtifactKind =
 	| "snapshot-html"
 	| "snapshot-assets"

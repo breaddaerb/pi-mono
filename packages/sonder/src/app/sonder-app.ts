@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { ensureCanonicalContent } from "../canonical/index.js";
@@ -7,6 +7,8 @@ import { type AskResponder, AskService } from "../runtime/ask-service.js";
 import {
 	AnnotationsRepo,
 	ArtifactsRepo,
+	AuthSessionRepo,
+	CaptureAttemptRepo,
 	ChatModeStateRepo,
 	ContextMarkRepo,
 	type ContextTurnState,
@@ -14,11 +16,18 @@ import {
 	createDatabase,
 	DialogueRepo,
 	ItemContentRepo,
+	ItemProvenanceRepo,
 	ItemsRepo,
 	type StoredChatModeState,
 } from "../storage/index.js";
 import type { Annotation, DialogueTurnStatus, ItemContent, ItemSourceType } from "../types.js";
 import { AnnotationService } from "./annotation-service.js";
+import {
+	type AuthInteractiveLoginLauncher,
+	AuthInteractiveLoginService,
+	type AuthInteractiveLoginStartResult,
+} from "./auth-interactive-login-service.js";
+import { AuthSessionService, type AuthSessionStatusResult } from "./auth-session-service.js";
 import { ContextControlService } from "./context-control-service.js";
 import { DialogueService } from "./dialogue-service.js";
 import { DiscoveryService } from "./discovery-service.js";
@@ -105,6 +114,12 @@ export interface SonderAppOptions {
 	persistThinking?: boolean;
 	now?: () => Date;
 	snapshotFetchImpl?: typeof fetch;
+	auth?: {
+		stateDir?: string;
+		encryptionKey?: string;
+		browserExecutablePath?: string;
+		interactiveLoginLauncher?: AuthInteractiveLoginLauncher;
+	};
 }
 
 export interface SonderListItem {
@@ -146,6 +161,9 @@ export type SonderSaveAcquisitionMethod = SaveSourceAcquisitionMethod;
 export type SonderSourcePlatform = SaveSourcePlatform;
 
 export type SonderEvidenceType = SaveEvidenceType;
+
+export type SonderAuthSessionStatus = AuthSessionStatusResult;
+export type SonderAuthInteractiveLoginStatus = AuthInteractiveLoginStartResult;
 
 export type SonderCommandResult =
 	| {
@@ -192,6 +210,32 @@ export type SonderCommandResult =
 	| {
 			type: "ann-del";
 			annotationId: string;
+	  }
+	| {
+			type: "auth-login";
+			session: SonderAuthSessionStatus;
+	  }
+	| {
+			type: "auth-status";
+			session: SonderAuthSessionStatus;
+	  }
+	| {
+			type: "auth-list";
+			sessions: SonderAuthSessionStatus[];
+	  }
+	| {
+			type: "auth-logout";
+			domain: string;
+			revoked: boolean;
+	  }
+	| {
+			type: "auth-login-start";
+			status: SonderAuthInteractiveLoginStatus;
+	  }
+	| {
+			type: "auth-login-cancel";
+			domain: string;
+			cancelled: boolean;
 	  };
 
 export type SonderCommandError = ParseTelegramCommandError | { code: "RUNTIME_ERROR"; message: string };
@@ -206,6 +250,9 @@ export class SonderApp {
 	readonly annotationsRepo: AnnotationsRepo;
 	readonly dialogueRepo: DialogueRepo;
 	readonly contextMarkRepo: ContextMarkRepo;
+	readonly authSessionRepo: AuthSessionRepo;
+	readonly captureAttemptRepo: CaptureAttemptRepo;
+	readonly itemProvenanceRepo: ItemProvenanceRepo;
 	readonly askService: AskService;
 	readonly dataRootDir: string;
 	private readonly responder: AskResponder;
@@ -215,6 +262,8 @@ export class SonderApp {
 	private readonly dialogueService: DialogueService;
 	private readonly discoveryService: DiscoveryService;
 	private readonly saveService: SaveService;
+	private readonly authSessionService: AuthSessionService | null;
+	private readonly authInteractiveLoginService: AuthInteractiveLoginService | null;
 
 	constructor(options: SonderAppOptions) {
 		const databasePath = options.paths.databasePath ?? join(options.paths.rootDir, "sonder.sqlite");
@@ -229,6 +278,9 @@ export class SonderApp {
 		this.annotationsRepo = new AnnotationsRepo(this.database);
 		this.dialogueRepo = new DialogueRepo(this.database);
 		this.contextMarkRepo = new ContextMarkRepo(this.database);
+		this.authSessionRepo = new AuthSessionRepo(this.database);
+		this.captureAttemptRepo = new CaptureAttemptRepo(this.database);
+		this.itemProvenanceRepo = new ItemProvenanceRepo(this.database);
 		this.chatModeStateRepo = new ChatModeStateRepo(this.database);
 		this.askService = new AskService(
 			{
@@ -263,14 +315,45 @@ export class SonderApp {
 			itemContentRepo: this.itemContentRepo,
 			annotationsRepo: this.annotationsRepo,
 		});
+		const authEncryptionKey = options.auth?.encryptionKey;
+		if (authEncryptionKey && authEncryptionKey.trim().length > 0) {
+			const authStateDir = options.auth?.stateDir ?? join(options.paths.rootDir, "auth");
+			this.authSessionService = new AuthSessionService({
+				authSessionRepo: this.authSessionRepo,
+				authStateDir,
+				encryptionKey: authEncryptionKey,
+				now: options.now,
+			});
+			this.authInteractiveLoginService = new AuthInteractiveLoginService({
+				authSessionService: this.authSessionService,
+				browserExecutablePath: options.auth?.browserExecutablePath,
+				launcher: options.auth?.interactiveLoginLauncher,
+				now: options.now,
+			});
+		} else {
+			this.authSessionService = null;
+			this.authInteractiveLoginService = null;
+		}
 		this.saveService = new SaveService({
 			database: this.database,
 			itemsRepo: this.itemsRepo,
 			artifactsRepo: this.artifactsRepo,
+			captureAttemptRepo: this.captureAttemptRepo,
+			itemProvenanceRepo: this.itemProvenanceRepo,
 			itemContentRepo: this.itemContentRepo,
 			dataRootDir: this.dataRootDir,
 			now: options.now,
 			snapshotFetchImpl: options.snapshotFetchImpl,
+			loadAuthStorageStateForDomain: (domain) => {
+				if (!this.authSessionService) {
+					return null;
+				}
+				try {
+					return this.authSessionService.loadStorageState(domain);
+				} catch {
+					return null;
+				}
+			},
 		});
 	}
 
@@ -448,7 +531,32 @@ export class SonderApp {
 		};
 	}
 
+	loginAuthSession(input: {
+		domain: string;
+		storageStateJson: string;
+		expiresAt?: string | null;
+	}): SonderAuthSessionStatus {
+		return this.requireAuthSessionService().login(input);
+	}
+
+	getAuthSessionStatus(domain: string): SonderAuthSessionStatus {
+		return this.requireAuthSessionService().status(domain);
+	}
+
+	listAuthSessionStatuses(limit = 20): SonderAuthSessionStatus[] {
+		return this.requireAuthSessionService().list(limit);
+	}
+
+	logoutAuthSession(domain: string): boolean {
+		return this.requireAuthSessionService().logout(domain);
+	}
+
+	loadAuthSessionStorageState(domain: string): string {
+		return this.requireAuthSessionService().loadStorageState(domain);
+	}
+
 	close(): void {
+		void this.authInteractiveLoginService?.closeAll();
 		this.database.close();
 	}
 
@@ -542,6 +650,81 @@ export class SonderApp {
 					},
 				};
 			}
+			if (parsed.value.type === "auth-login-file") {
+				const storageStateJson = readFileSync(parsed.value.storageStatePath, "utf8");
+				const session = this.loginAuthSession({
+					domain: parsed.value.domain,
+					storageStateJson,
+				});
+				return {
+					ok: true,
+					value: {
+						type: "auth-login",
+						session,
+					},
+				};
+			}
+			if (parsed.value.type === "auth-login") {
+				const status = await this.requireAuthInteractiveLoginService().start(parsed.value.domain);
+				return {
+					ok: true,
+					value: {
+						type: "auth-login-start",
+						status,
+					},
+				};
+			}
+			if (parsed.value.type === "auth-done") {
+				const session = await this.requireAuthInteractiveLoginService().done(parsed.value.domain);
+				return {
+					ok: true,
+					value: {
+						type: "auth-login",
+						session,
+					},
+				};
+			}
+			if (parsed.value.type === "auth-cancel") {
+				const cancelled = await this.requireAuthInteractiveLoginService().cancel(parsed.value.domain);
+				return {
+					ok: true,
+					value: {
+						type: "auth-login-cancel",
+						domain: parsed.value.domain,
+						cancelled,
+					},
+				};
+			}
+			if (parsed.value.type === "auth-status") {
+				const session = this.getAuthSessionStatus(parsed.value.domain);
+				return {
+					ok: true,
+					value: {
+						type: "auth-status",
+						session,
+					},
+				};
+			}
+			if (parsed.value.type === "auth-list") {
+				return {
+					ok: true,
+					value: {
+						type: "auth-list",
+						sessions: this.listAuthSessionStatuses(parsed.value.limit),
+					},
+				};
+			}
+			if (parsed.value.type === "auth-logout") {
+				const revoked = this.logoutAuthSession(parsed.value.domain);
+				return {
+					ok: true,
+					value: {
+						type: "auth-logout",
+						domain: parsed.value.domain,
+						revoked,
+					},
+				};
+			}
 
 			const askResult = await this.askService.ask(parsed.value.itemId, parsed.value.question);
 			return {
@@ -575,5 +758,19 @@ export class SonderApp {
 			anchor: annotation.anchor,
 			createdAt: annotation.createdAt,
 		};
+	}
+
+	private requireAuthSessionService(): AuthSessionService {
+		if (!this.authSessionService) {
+			throw new Error("Auth session service is not configured. Set SonderAppOptions.auth.encryptionKey.");
+		}
+		return this.authSessionService;
+	}
+
+	private requireAuthInteractiveLoginService(): AuthInteractiveLoginService {
+		if (!this.authInteractiveLoginService) {
+			throw new Error("Interactive auth login is not configured. Set SonderAppOptions.auth.encryptionKey.");
+		}
+		return this.authInteractiveLoginService;
 	}
 }

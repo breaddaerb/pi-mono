@@ -477,3 +477,120 @@ Objective: persist a deterministic `canonical_md` per item and enforce canonical
 ### 24.10 Ops (optional)
 
 - [ ] Optional: add a one-shot CLI/backfill command to canonicalize all items offline (not used by Telegram flows)
+
+## Milestone 25: Authenticated capture v1 (planned spec)
+
+Objective: make login-gated source capture reliable via user-authenticated browser sessions while preserving existing Telegram/local-viewer behavior.
+
+### 25.0 Product constraints and invariants
+
+- [ ] Treat login-gated capture as user-mediated auth, never username/password storage in Sonder
+- [ ] Keep existing Telegram/local-viewer contracts stable while extending capture internals
+- [ ] Preserve acquisition precedence and provenance semantics:
+  - [ ] `direct_fetch` first
+  - [ ] source-specific fallback (`browser_fetch` where applicable)
+  - [ ] `reader_proxy`
+  - [ ] authenticated capture fallback (`auth_browser_fetch`)
+  - [ ] manual evidence (`url + pasted text`) as final path
+- [ ] Keep canonical markdown (`item_contents.canonical_md`) as single rendering and anchoring surface
+- [ ] Keep diagnostics/auditability first-class for every capture attempt
+
+### 25.1 Domain model and storage additions
+
+- [x] Add migration: `auth_sessions` table
+  - [x] fields: `id`, `domain`, `status` (`active|expired|revoked|error`), `storage_state_path`, `created_at`, `updated_at`, `last_validated_at`, `expires_at`, `last_error`
+  - [x] unique index/constraint on `domain`
+- [x] Add migration: `capture_attempts` table (DB mirror of acquisition report for queryable history)
+  - [x] fields: `id`, `item_id`, `attempt_order`, `attempt_type`, `request_url`, `status`, `reason`, `http_status`, `latency_ms`, `meta_json`, `created_at`
+  - [x] index on `item_id, attempt_order`
+- [x] Add migration: `item_provenance` table
+  - [x] fields: `item_id`, `original_url`, `capture_method`, `winner_attempt_id`, `evidence_confidence` (`high|medium|low`), `captured_at`
+- [x] Add repos:
+  - [x] `src/storage/auth-session-repo.ts`
+  - [x] `src/storage/capture-attempt-repo.ts`
+  - [x] `src/storage/item-provenance-repo.ts`
+- [x] Extend cascade/delete and storage smoke tests for new tables
+
+### 25.2 Authenticated user-side capture architecture
+
+- [x] Add auth manager module(s):
+  - [x] `src/sources/auth/auth-session-manager.ts` (issue/load/revoke session state)
+  - [x] `src/sources/auth/auth-state-crypto.ts` (encrypt/decrypt storage state at rest)
+  - [x] `src/sources/auth/domain-policy.ts` (domain -> auth strategy map)
+- [x] Add authenticated browser capture adapter:
+  - [x] `src/sources/auth-browser-adapter.ts`
+  - [x] Playwright context from saved `storageState`
+  - [x] deterministic extraction path to existing artifact model (`snapshot`, `extracted`, `fallback/evidence`)
+- [ ] Add session lifecycle policy:
+  - [x] login bootstrap (`start login`, user completes in headed browser)
+  - [x] validation probe (`status`)
+  - [x] expiry/revocation handling (`logout`)
+  - [ ] auto re-auth prompt on invalid session
+- [ ] Add hard security requirements:
+  - [x] never persist credentials, only browser session state
+  - [ ] redact cookies/tokens from logs and diagnostics
+  - [ ] no third-party proxy for authenticated requests
+  - [x] permissions on state files are owner-only
+
+### 25.3 Capture pipeline integration
+
+- [x] Extend source acquisition strategy in `src/sources/acquisition.ts`:
+  - [x] add `auth_browser_fetch` strategy type
+  - [x] trigger condition: non-OK direct/proxy outcomes on auth-eligible domains or explicit user request
+  - [x] preserve existing direct/proxy behavior for non-auth domains
+- [x] Integrate with `src/app/save-service.ts`:
+  - [x] write ordered `capture_attempts` records for all attempts
+  - [x] persist `item_provenance` winner metadata on success
+  - [x] classify evidence confidence by winner strategy and content quality checks
+- [x] Keep artifacts and canonical generation unchanged at interface level:
+  - [x] successful authenticated capture still produces standard artifacts
+  - [x] canonical generation continues via existing source preference rules
+
+### 25.4 Telegram command and UX spec
+
+- [x] Add auth command surface (no ID-heavy UX):
+  - [x] `/auth login <domain>` + `/auth done <domain>` + `/auth cancel <domain>`
+  - [x] `/auth status <domain>`
+  - [x] `/auth logout <domain>`
+  - [x] `/auth list [limit]`
+  - [x] `/auth login-file <domain> <storageStatePath>` fallback
+- [ ] Update save-failure guidance in Telegram:
+  - [ ] for login-gated failures, offer actions: `Use Auth Session`, `Login Now`, `Paste Evidence`
+  - [ ] keep fallback path one-hop (no dead-end loops)
+- [ ] Maintain compatibility with existing `/save` suggestion flow and pending-input behavior
+- [ ] Add callback handlers/menu state for auth actions in transport modules:
+  - [ ] `src/transport/callback-handlers/*`
+  - [ ] `src/transport/telegram-runner-coordinator.ts`
+  - [ ] `src/transport/telegram-renderers.ts`
+
+### 25.5 Module-level implementation slices
+
+- [x] Slice A: storage + migration + repos + tests
+- [x] Slice B: auth session manager + encrypted storage state + login/logout/status flow
+- [x] Slice C: `auth_browser_fetch` adapter + acquisition integration + save-service provenance writes
+- [ ] Slice D: Telegram `/auth` commands + save fallback UX + callback actions
+- [x] Progress 2026-02-26: added `/auth` command parsing + app execution + Telegram rendering for `login/done/cancel/status/list/logout/login-file`, and wired auth env/bootstrap for Telegram and one-shot CLI
+- [ ] Slice E: regression + security hardening pass
+
+### 25.6 Testing and verification plan
+
+- [ ] Unit tests:
+  - [x] auth session repo/state lifecycle
+  - [x] acquisition strategy ordering and fallback decisions
+  - [x] provenance/confidence classification
+- [ ] Integration tests:
+  - [ ] `/auth login -> /save gated url -> auth capture success`
+  - [ ] expired auth session -> re-auth prompt path
+  - [ ] `/save` still succeeds on non-auth public URLs without auth overhead
+- [ ] Transport tests:
+  - [ ] Telegram auth commands, callbacks, and save recovery guidance
+- [ ] Security tests:
+  - [ ] auth state file permissions
+  - [ ] log redaction for token-like fields
+  - [ ] no proxy usage in authenticated attempt path
+
+### 25.7 Acceptance criteria (v1 done)
+
+- [ ] Gated domains can be captured through user-authenticated session path without credential storage
+- [ ] Every saved item has queryable capture provenance and ordered attempt history
+- [ ] Existing Telegram-first flows remain backward compatible for non-auth use cases

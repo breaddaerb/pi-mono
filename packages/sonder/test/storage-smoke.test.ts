@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	AnnotationsRepo,
 	ArtifactsRepo,
+	AuthSessionRepo,
+	CaptureAttemptRepo,
 	ChatModeStateRepo,
 	ContextMarkRepo,
 	createDatabase,
@@ -12,9 +14,20 @@ import {
 	getArtifactFilePath,
 	getItemArtifactDirectory,
 	ItemContentRepo,
+	ItemProvenanceRepo,
 	ItemsRepo,
 } from "../src/storage/index.js";
-import type { Annotation, Artifact, DialogueSession, DialogueTurn, Item, ItemContent } from "../src/types.js";
+import type {
+	Annotation,
+	Artifact,
+	AuthSession,
+	CaptureAttempt,
+	DialogueSession,
+	DialogueTurn,
+	Item,
+	ItemContent,
+	ItemProvenance,
+} from "../src/types.js";
 
 describe("storage smoke", () => {
 	const tempDirs: string[] = [];
@@ -37,6 +50,9 @@ describe("storage smoke", () => {
 		const itemContentRepo = new ItemContentRepo(database);
 		const contextMarkRepo = new ContextMarkRepo(database);
 		const chatModeStateRepo = new ChatModeStateRepo(database);
+		const authSessionRepo = new AuthSessionRepo(database);
+		const captureAttemptRepo = new CaptureAttemptRepo(database);
+		const itemProvenanceRepo = new ItemProvenanceRepo(database);
 
 		const item: Item = {
 			id: "item_1",
@@ -111,6 +127,44 @@ describe("storage smoke", () => {
 		};
 		itemContentRepo.upsert(itemContent);
 
+		const authSession: AuthSession = {
+			id: "auth_1",
+			domain: "x.com",
+			status: "active",
+			storageStatePath: "data/auth/x.com-state.json.enc",
+			createdAt: "2026-02-14T01:00:00.500Z",
+			updatedAt: "2026-02-14T01:00:05.500Z",
+			lastValidatedAt: "2026-02-14T01:00:05.500Z",
+			expiresAt: "2026-03-14T01:00:05.500Z",
+			lastError: null,
+		};
+		authSessionRepo.upsert(authSession);
+
+		const captureAttempt: CaptureAttempt = {
+			id: "cap_1",
+			itemId: item.id,
+			attemptOrder: 1,
+			attemptType: "direct_fetch",
+			requestUrl: item.originalUrl,
+			status: "ok",
+			reason: null,
+			httpStatus: 200,
+			latencyMs: 345,
+			metaJson: '{"finalUrl":"https://lucumr.pocoo.org/2026/2/9/a-language-for-agents"}',
+			createdAt: "2026-02-14T01:00:01.500Z",
+		};
+		captureAttemptRepo.create(captureAttempt);
+
+		const itemProvenance: ItemProvenance = {
+			itemId: item.id,
+			originalUrl: item.originalUrl,
+			captureMethod: "direct_fetch",
+			winnerAttemptId: captureAttempt.id,
+			evidenceConfidence: "high",
+			capturedAt: "2026-02-14T01:00:01.900Z",
+		};
+		itemProvenanceRepo.upsert(itemProvenance);
+
 		expect(itemsRepo.findById(item.id)).toEqual(item);
 		expect(itemsRepo.listRecent()).toEqual([item]);
 		expect(artifactsRepo.findById(artifact.id)).toEqual(artifact);
@@ -124,6 +178,11 @@ describe("storage smoke", () => {
 		expect(dialogueRepo.findTurnById(turn.id)).toEqual(turn);
 		expect(dialogueRepo.listTurnsBySessionId(session.id)).toEqual([turn]);
 		expect(itemContentRepo.findByItemId(item.id)).toEqual(itemContent);
+		expect(authSessionRepo.findByDomain(authSession.domain)).toEqual(authSession);
+		expect(authSessionRepo.listByUpdatedAt()).toEqual([authSession]);
+		expect(captureAttemptRepo.findById(captureAttempt.id)).toEqual(captureAttempt);
+		expect(captureAttemptRepo.listByItemId(item.id)).toEqual([captureAttempt]);
+		expect(itemProvenanceRepo.findByItemId(item.id)).toEqual(itemProvenance);
 
 		contextMarkRepo.upsertState({
 			sessionId: session.id,
@@ -153,6 +212,10 @@ describe("storage smoke", () => {
 		expect(chatModeStateRepo.findByChatId(42)).toBeNull();
 		expect(itemsRepo.deleteById(item.id)).toBe(true);
 		expect(itemContentRepo.findByItemId(item.id)).toBeNull();
+		expect(captureAttemptRepo.listByItemId(item.id)).toEqual([]);
+		expect(itemProvenanceRepo.findByItemId(item.id)).toBeNull();
+		expect(authSessionRepo.deleteByDomain(authSession.domain)).toBe(true);
+		expect(authSessionRepo.findByDomain(authSession.domain)).toBeNull();
 
 		database.close();
 	});

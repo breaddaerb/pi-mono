@@ -54,12 +54,24 @@ function usage(): string {
 		'  sonder --root ./.sonder-data /annotate <itemId> "key quote" #thesis',
 		"  sonder --root ./.sonder-data /ann list <itemId>",
 		"  sonder --root ./.sonder-data /ann del <annotationId>",
+		"  sonder --root ./.sonder-data /auth list",
+		"  sonder --root ./.sonder-data /auth login xiaohongshu.com",
+		"  sonder --root ./.sonder-data /auth done xiaohongshu.com",
+		"  sonder --root ./.sonder-data /auth cancel xiaohongshu.com",
+		"  sonder --root ./.sonder-data /auth status xiaohongshu.com",
+		"  sonder --root ./.sonder-data /auth logout xiaohongshu.com",
+		"  sonder --root ./.sonder-data /auth login-file xiaohongshu.com /abs/path/storage-state.json",
 		"",
 		"Responder modes:",
 		"  SONDER_RESPONDER=stub (default)",
 		"  SONDER_RESPONDER=codex with either:",
 		"    - SONDER_CODEX_TOKEN=<token>",
 		"    - or pi OAuth credentials in .pi/auth.json (or SONDER_AUTH_PATH)",
+		"",
+		"Auth session env:",
+		"  SONDER_AUTH_ENCRYPTION_KEY=<secret> (optional, enables auth sessions)",
+		"  SONDER_AUTH_STATE_DIR=<dir> (optional, encrypted auth state files path)",
+		"  SONDER_AUTH_BROWSER_EXECUTABLE_PATH=<path> (optional, headed login browser)",
 	].join("\n");
 }
 
@@ -77,12 +89,22 @@ export async function runCommandOnce(
 
 	const env = options.env ?? process.env;
 	const responderFactory = options.createResponder ?? createResponderFromEnv;
+	const authEncryptionKey = env.SONDER_AUTH_ENCRYPTION_KEY?.trim();
+	const authStateDir = env.SONDER_AUTH_STATE_DIR?.trim();
+	const authBrowserExecutablePath = env.SONDER_AUTH_BROWSER_EXECUTABLE_PATH?.trim();
 
 	let app: SonderApp;
 	try {
 		app = new SonderApp({
 			paths: { rootDir: parsed.rootDir },
 			responder: responderFactory(env),
+			auth: authEncryptionKey
+				? {
+						encryptionKey: authEncryptionKey,
+						stateDir: authStateDir || undefined,
+						browserExecutablePath: authBrowserExecutablePath || undefined,
+					}
+				: undefined,
 		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

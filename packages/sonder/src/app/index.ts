@@ -2,6 +2,8 @@ export {
 	SonderApp,
 	type SonderAppOptions,
 	type SonderAppPaths,
+	type SonderAuthInteractiveLoginStatus,
+	type SonderAuthSessionStatus,
 	type SonderCommandError,
 	type SonderCommandResult,
 	type SonderContextDump,

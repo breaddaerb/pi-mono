@@ -19,6 +19,8 @@ export interface SourceCaptureInput {
 	url: string;
 	dataRootDir: string;
 	fetchImpl?: typeof fetch;
+	authStorageStateJson?: string | null;
+	authBrowserFetchImpl?: AuthBrowserFetchImpl;
 }
 
 export interface SourceCaptureDebug {
@@ -28,7 +30,27 @@ export interface SourceCaptureDebug {
 	redirectChain: string[];
 }
 
-export type SourceAcquisitionMethod = "direct_fetch" | "browser_fetch" | "reader_proxy" | "user_paste";
+export interface AuthBrowserFetchInput {
+	url: string;
+	storageStateJson: string;
+}
+
+export interface AuthBrowserFetchResult {
+	httpStatus: number | null;
+	contentType: string | null;
+	finalUrl: string;
+	redirectChain: string[];
+	html: string;
+}
+
+export type AuthBrowserFetchImpl = (input: AuthBrowserFetchInput) => Promise<AuthBrowserFetchResult>;
+
+export type SourceAcquisitionMethod =
+	| "direct_fetch"
+	| "browser_fetch"
+	| "reader_proxy"
+	| "user_paste"
+	| "auth_browser_fetch";
 
 export interface SourceAcquisitionArtifacts {
 	text?: string;

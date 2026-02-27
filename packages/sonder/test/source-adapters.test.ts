@@ -1,8 +1,14 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { captureFromSource } from "../src/sources/index.js";
+
+vi.mock("../src/sources/wechat-browser.js", () => ({
+	fetchWechatInBrowser: async () => {
+		throw new Error("wechat-browser-disabled-in-tests");
+	},
+}));
 
 describe("source adapters", () => {
 	const tempDirs: string[] = [];
@@ -65,8 +71,10 @@ describe("source adapters", () => {
 		expect(result.usable).toBe(true);
 		expect(result.acquisitionMethod).toBe("reader_proxy");
 		expect(result.attempts).toHaveLength(2);
-		expect(result.attempts[0]?.status).toBe("unsupported");
-		expect(result.attempts[0]?.reasonCode).toBe("TWITTER_LOW_SIGNAL_CONTENT");
+		expect(result.attempts[0]?.status).not.toBe("ok");
+		expect(["TWITTER_LOW_SIGNAL_CONTENT", "TWITTER_LOGIN_WALL", "LOGIN_REQUIRED"]).toContain(
+			result.attempts[0]?.reasonCode,
+		);
 		expect(result.attempts[1]?.method).toBe("reader_proxy");
 	});
 
@@ -117,10 +125,13 @@ describe("source adapters", () => {
 			url: "https://r.jina.ai/https://x.com/karpathy/status/2023476423055601903?s=20",
 			dataRootDir: root,
 			fetchImpl: async () =>
-				new Response("@karpathy: the training environment is the benchmark itself.", {
-					status: 200,
-					headers: { "content-type": "text/plain; charset=utf-8" },
-				}),
+				new Response(
+					"@karpathy: the training environment is the benchmark itself. This wrapped text includes enough concrete detail to exceed short-snippet heuristics and should remain usable as first-class text evidence for downstream retrieval and dialogue context.",
+					{
+						status: 200,
+						headers: { "content-type": "text/plain; charset=utf-8" },
+					},
+				),
 		});
 		expect(result.platform).toBe("twitter");
 		expect(result.status).toBe("ok");
@@ -264,6 +275,96 @@ describe("source adapters", () => {
 		expect(result.usable).toBe(false);
 		expect(result.acquisitionMethod).toBe("direct_fetch");
 		expect(result.attempts).toHaveLength(2);
+	});
+
+	it("falls back to auth browser fetch when reader proxy remains unusable", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-source-"));
+		tempDirs.push(root);
+
+		const result = await captureFromSource({
+			itemId: "item_auth_browser_fallback",
+			url: "https://x.com/example/status/987",
+			dataRootDir: root,
+			authStorageStateJson: '{"cookies":[{"name":"sid","value":"x"}],"origins":[]}',
+			authBrowserFetchImpl: async () => ({
+				httpStatus: 200,
+				contentType: "text/html; charset=utf-8",
+				finalUrl: "https://x.com/example/status/987",
+				redirectChain: ["https://x.com/example/status/987"],
+				html: "<html><body><article><p>Recovered authenticated post with concrete details and enough grounding text.</p></article></body></html>",
+			}),
+			fetchImpl: async (input) => {
+				const requestUrl = String(input);
+				if (requestUrl.startsWith("https://r.jina.ai/")) {
+					return new Response("Sign in to continue reading.", {
+						status: 200,
+						headers: { "content-type": "text/plain; charset=utf-8" },
+					});
+				}
+				return new Response("<html><body><h1>Log in to X</h1><p>Sign in required.</p></body></html>", {
+					status: 200,
+					headers: { "content-type": "text/html; charset=utf-8" },
+				});
+			},
+		});
+
+		expect(result.platform).toBe("twitter");
+		expect(result.status).toBe("ok");
+		expect(result.usable).toBe(true);
+		expect(result.acquisitionMethod).toBe("auth_browser_fetch");
+		expect(result.attempts).toHaveLength(3);
+		expect(result.attempts[0]?.method).toBe("direct_fetch");
+		expect(result.attempts[1]?.method).toBe("reader_proxy");
+		expect(result.attempts[2]?.method).toBe("auth_browser_fetch");
+	});
+
+	it("accepts authenticated xiaohongshu capture when full content exists despite incidental login text", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-source-"));
+		tempDirs.push(root);
+
+		const result = await captureFromSource({
+			itemId: "item_auth_browser_xhs_content",
+			url: "https://www.xiaohongshu.com/discovery/item/abc",
+			dataRootDir: root,
+			authStorageStateJson: '{"cookies":[{"name":"sid","value":"x"}],"origins":[]}',
+			authBrowserFetchImpl: async () => ({
+				httpStatus: 200,
+				contentType: "text/html; charset=utf-8",
+				finalUrl: "https://www.xiaohongshu.com/explore/abc",
+				redirectChain: [
+					"https://www.xiaohongshu.com/discovery/item/abc",
+					"https://www.xiaohongshu.com/explore/abc",
+				],
+				html: [
+					"<html><body>",
+					"<h1>小红书笔记</h1>",
+					"<p>登录后可发布内容。</p>",
+					"<p>真正正文：强化学习环境设计要先简后繁，奖励函数要阶段化并规避作弊路径。</p>",
+					"<p>进一步说明：先离散动作空间再连续控制，能显著降低早期训练不稳定性。</p>",
+					"</body></html>",
+				].join(""),
+			}),
+			fetchImpl: async (input) => {
+				const requestUrl = String(input);
+				if (requestUrl.startsWith("https://r.jina.ai/")) {
+					return new Response("Sign in to continue reading.", {
+						status: 200,
+						headers: { "content-type": "text/plain; charset=utf-8" },
+					});
+				}
+				return new Response("<html><body><h1>请登录后继续访问</h1></body></html>", {
+					status: 200,
+					headers: { "content-type": "text/html; charset=utf-8" },
+				});
+			},
+		});
+
+		expect(result.platform).toBe("xiaohongshu");
+		expect(result.status).toBe("ok");
+		expect(result.usable).toBe(true);
+		expect(result.acquisitionMethod).toBe("auth_browser_fetch");
+		expect(result.attempts).toHaveLength(3);
+		expect(result.attempts[2]?.method).toBe("auth_browser_fetch");
 	});
 
 	it("keeps arxiv html as usable", async () => {

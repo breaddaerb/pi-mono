@@ -683,6 +683,193 @@ describe("SonderApp", () => {
 		}
 	});
 
+	it("supports auth command flow when auth service is configured", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const storageStatePath = join(root, "storage-state.json");
+		writeFileSync(storageStatePath, '{"cookies":[{"name":"sid","value":"v"}],"origins":[]}', "utf8");
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+			auth: {
+				encryptionKey: "test-auth-key",
+			},
+		});
+
+		try {
+			const login = await app.processCommand(`/auth login-file twitter.com ${storageStatePath}`);
+			expect(login.ok).toBe(true);
+			if (!login.ok || login.value.type !== "auth-login") {
+				throw new Error("Expected auth-login result");
+			}
+			expect(login.value.session.domain).toBe("x.com");
+			expect(login.value.session.status).toBe("active");
+
+			const status = await app.processCommand("/auth status x.com");
+			expect(status.ok).toBe(true);
+			if (!status.ok || status.value.type !== "auth-status") {
+				throw new Error("Expected auth-status result");
+			}
+			expect(status.value.session.status).toBe("active");
+
+			const listed = await app.processCommand("/auth list 1");
+			expect(listed.ok).toBe(true);
+			if (!listed.ok || listed.value.type !== "auth-list") {
+				throw new Error("Expected auth-list result");
+			}
+			expect(listed.value.sessions).toHaveLength(1);
+
+			const logout = await app.processCommand("/auth logout x.com");
+			expect(logout.ok).toBe(true);
+			if (!logout.ok || logout.value.type !== "auth-logout") {
+				throw new Error("Expected auth-logout result");
+			}
+			expect(logout.value.revoked).toBe(true);
+		} finally {
+			app.close();
+		}
+	});
+
+	it("supports interactive auth login flow with pending state", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const launched: Array<{ domain: string; loginUrl: string }> = [];
+		let controllerClosed = false;
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+			auth: {
+				encryptionKey: "test-auth-key",
+				interactiveLoginLauncher: async (input) => {
+					launched.push({ domain: input.domain, loginUrl: input.loginUrl });
+					return {
+						captureStorageStateJson: async () =>
+							'{"cookies":[{"name":"sid","value":"v"}],"origins":[{"origin":"https://www.xiaohongshu.com","localStorage":[{"name":"k","value":"v"}]}]}',
+						close: async () => {
+							controllerClosed = true;
+						},
+					};
+				},
+			},
+		});
+
+		try {
+			const start = await app.processCommand("/auth login xiaohongshu.com");
+			expect(start.ok).toBe(true);
+			if (!start.ok || start.value.type !== "auth-login-start") {
+				throw new Error("Expected auth-login-start result");
+			}
+			expect(start.value.status.alreadyPending).toBe(false);
+			expect(start.value.status.domain).toBe("xiaohongshu.com");
+			expect(launched).toHaveLength(1);
+			expect(launched[0]?.loginUrl).toContain("xiaohongshu.com");
+
+			const startAgain = await app.processCommand("/auth login xiaohongshu.com");
+			expect(startAgain.ok).toBe(true);
+			if (!startAgain.ok || startAgain.value.type !== "auth-login-start") {
+				throw new Error("Expected auth-login-start result");
+			}
+			expect(startAgain.value.status.alreadyPending).toBe(true);
+			expect(launched).toHaveLength(1);
+
+			const done = await app.processCommand("/auth done xiaohongshu.com");
+			expect(done.ok).toBe(true);
+			if (!done.ok || done.value.type !== "auth-login") {
+				throw new Error("Expected auth-login result");
+			}
+			expect(done.value.session.status).toBe("active");
+			expect(controllerClosed).toBe(true);
+		} finally {
+			app.close();
+		}
+	});
+
+	it("cancels pending interactive auth login", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		let closeCalls = 0;
+
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+			auth: {
+				encryptionKey: "test-auth-key",
+				interactiveLoginLauncher: async () => ({
+					captureStorageStateJson: async () => '{"cookies":[{"name":"sid","value":"v"}],"origins":[]}',
+					close: async () => {
+						closeCalls++;
+					},
+				}),
+			},
+		});
+
+		try {
+			const started = await app.processCommand("/auth login x.com");
+			expect(started.ok).toBe(true);
+
+			const cancel = await app.processCommand("/auth cancel x.com");
+			expect(cancel.ok).toBe(true);
+			if (!cancel.ok || cancel.value.type !== "auth-login-cancel") {
+				throw new Error("Expected auth-login-cancel result");
+			}
+			expect(cancel.value.cancelled).toBe(true);
+			expect(closeCalls).toBe(1);
+
+			const doneAfterCancel = await app.processCommand("/auth done x.com");
+			expect(doneAfterCancel.ok).toBe(false);
+			if (doneAfterCancel.ok) {
+				throw new Error("Expected runtime error");
+			}
+			expect(doneAfterCancel.error.code).toBe("RUNTIME_ERROR");
+			expect(doneAfterCancel.error.message).toContain("No pending auth login");
+		} finally {
+			app.close();
+		}
+	});
+
+	it("returns runtime error for auth commands when auth service is not configured", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
+		tempDirs.push(root);
+		const app = new SonderApp({
+			paths: { rootDir: root },
+			responder: async () => ({
+				answer: "unused",
+				model: "gpt-5",
+				provider: "openai-codex",
+				citations: [],
+			}),
+		});
+
+		try {
+			const result = await app.processCommand("/auth list");
+			expect(result.ok).toBe(false);
+			if (result.ok) {
+				throw new Error("Expected runtime error");
+			}
+			expect(result.error.code).toBe("RUNTIME_ERROR");
+			expect(result.error.message).toContain("Auth session service is not configured");
+		} finally {
+			app.close();
+		}
+	});
+
 	it("returns parser errors for unsupported commands", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sonder-app-"));
 		tempDirs.push(root);

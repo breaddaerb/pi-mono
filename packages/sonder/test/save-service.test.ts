@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SaveService } from "../src/app/save-service.js";
-import { ArtifactsRepo, createDatabase, ItemContentRepo, ItemsRepo } from "../src/storage/index.js";
+import {
+	ArtifactsRepo,
+	CaptureAttemptRepo,
+	createDatabase,
+	ItemContentRepo,
+	ItemProvenanceRepo,
+	ItemsRepo,
+} from "../src/storage/index.js";
 
 interface TestServer {
 	baseUrl: string;
@@ -52,11 +59,15 @@ describe("SaveService", () => {
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
 		const artifactsRepo = new ArtifactsRepo(database);
+		const captureAttemptRepo = new CaptureAttemptRepo(database);
+		const itemProvenanceRepo = new ItemProvenanceRepo(database);
 		const itemContentRepo = new ItemContentRepo(database);
 		const service = new SaveService({
 			database,
 			itemsRepo,
 			artifactsRepo,
+			captureAttemptRepo,
+			itemProvenanceRepo,
 			itemContentRepo,
 			dataRootDir: join(root, "data"),
 		});
@@ -79,6 +90,10 @@ describe("SaveService", () => {
 			const artifacts = artifactsRepo.listByItemId(result.itemId);
 			expect(artifacts.some((artifact) => artifact.kind === "extracted-text")).toBe(true);
 			expect(artifacts.some((artifact) => artifact.kind === "acquisition-report")).toBe(true);
+			expect(captureAttemptRepo.listByItemId(result.itemId).length).toBeGreaterThan(0);
+			const provenance = itemProvenanceRepo.findByItemId(result.itemId);
+			expect(provenance?.captureMethod).toBe(result.sourceAcquisitionMethod);
+			expect(provenance?.evidenceConfidence).toBe("high");
 			const canonical = itemContentRepo.findByItemId(result.itemId);
 			expect(canonical?.canonicalMd.length ?? 0).toBeGreaterThan(0);
 			expect(canonical?.canonicalVersion).toBe(1);
@@ -95,11 +110,15 @@ describe("SaveService", () => {
 		const database = createDatabase({ databasePath: join(root, "sonder.sqlite") });
 		const itemsRepo = new ItemsRepo(database);
 		const artifactsRepo = new ArtifactsRepo(database);
+		const captureAttemptRepo = new CaptureAttemptRepo(database);
+		const itemProvenanceRepo = new ItemProvenanceRepo(database);
 		const itemContentRepo = new ItemContentRepo(database);
 		const service = new SaveService({
 			database,
 			itemsRepo,
 			artifactsRepo,
+			captureAttemptRepo,
+			itemProvenanceRepo,
 			itemContentRepo,
 			dataRootDir: join(root, "data"),
 			snapshotFetchImpl: async () =>

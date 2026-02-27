@@ -1,38 +1,15 @@
-import { existsSync } from "node:fs";
 import { chromium } from "playwright-core";
+import { resolveChromiumExecutablePath } from "./browser-executable.js";
 import type { WechatHttpTrace } from "./wechat-http.js";
 
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 12_000;
 const DEFAULT_USER_AGENT =
 	"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
 
-const COMMON_CHROMIUM_EXECUTABLE_PATHS = [
-	"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-	"/Applications/Chromium.app/Contents/MacOS/Chromium",
-	"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-	"/usr/bin/google-chrome",
-	"/usr/bin/chromium",
-	"/usr/bin/chromium-browser",
-	"C:/Program Files/Google/Chrome/Application/chrome.exe",
-	"C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-];
-
 export interface FetchWechatInBrowserOptions {
 	url: string;
 	executablePath?: string;
 	timeoutMs?: number;
-}
-
-function resolveExecutablePath(explicitPath: string | undefined): string | undefined {
-	if (explicitPath && explicitPath.trim().length > 0) {
-		return explicitPath;
-	}
-	for (const path of COMMON_CHROMIUM_EXECUTABLE_PATHS) {
-		if (existsSync(path)) {
-			return path;
-		}
-	}
-	return undefined;
 }
 
 function normalizeHeaderValue(value: string): string {
@@ -57,7 +34,7 @@ function toSafeHeaders(rawHeaders: Record<string, string>): Headers {
 
 export async function fetchWechatInBrowser(options: FetchWechatInBrowserOptions): Promise<WechatHttpTrace> {
 	const timeoutMs = options.timeoutMs ?? DEFAULT_NAVIGATION_TIMEOUT_MS;
-	const executablePath = resolveExecutablePath(options.executablePath);
+	const executablePath = resolveChromiumExecutablePath(options.executablePath);
 	const browser = await chromium.launch({
 		headless: true,
 		executablePath,

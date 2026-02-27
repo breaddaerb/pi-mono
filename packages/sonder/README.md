@@ -80,6 +80,7 @@ SONDER_TELEGRAM_BOT_TOKEN="<bot-token>" npx tsx src/main.ts --telegram-check
 
 ```bash
 SONDER_TELEGRAM_BOT_TOKEN="<bot-token>" \
+SONDER_AUTH_ENCRYPTION_KEY="<stable-secret>" \
 SONDER_RESPONDER=codex \
 SONDER_VIEWER_PORT=4321 \
 npx tsx src/main.ts --telegram --root ./.sonder-data
@@ -99,6 +100,9 @@ SONDER_TELEGRAM_PROXY="http://127.0.0.1:7890"
 /save <url> [#tags...] [pasted evidence text]
 /find <query> [limit]
 /list [limit]
+/auth login <domain>
+/auth done <domain>
+/auth logout <domain>
 /open [itemId]
 /sessions
 /history
@@ -122,7 +126,24 @@ Tip: if Telegram sends `/save` immediately from command suggestions, Sonder will
 ```
 
 Telegram startup behavior:
-- Sonder registers slash-command suggestions via Telegram `setMyCommands` (`/save`, `/find`, `/list`, `/open`, `/sessions`, `/history`, `/context`, `/where`, `/models`, `/exit`).
+- Sonder registers slash-command suggestions via Telegram `setMyCommands` (`/save`, `/auth`, `/find`, `/list`, `/open`, `/sessions`, `/history`, `/context`, `/where`, `/models`, `/exit`).
+
+### Auth commands (login-gated sources)
+
+```text
+/auth login <domain>      # opens headed browser locally for manual login
+/auth done <domain>       # capture storage state and persist encrypted auth session
+/auth cancel <domain>     # abort pending login flow
+/auth status <domain>
+/auth list [limit]
+/auth logout <domain>
+/auth login-file <domain> <storageStatePath>   # headless/server fallback
+```
+
+Notes:
+- `/auth login ...` opens a browser on the machine running Sonder (Telegram bot host).
+- After manual login in that browser, run `/auth done ...`.
+- `/save <login-gated-url>` then automatically tries `auth_browser_fetch` when needed.
 
 ## Interaction map (recommended)
 
@@ -282,3 +303,6 @@ node dist/main.js --root ./.sonder-data /ask ITEM_ID "question"
 - `SONDER_CODEX_REASONING` (optional: `minimal|low|medium|high`)
 - `SONDER_WECHAT_BROWSER_EXECUTABLE_PATH` (optional: override auto-detected Chromium/Chrome executable path for WeChat browser fallback)
 - `SONDER_WECHAT_BROWSER_TIMEOUT_MS` (optional: navigation timeout for WeChat browser fallback; default `12000`)
+- `SONDER_AUTH_ENCRYPTION_KEY` (optional but required to enable auth sessions)
+- `SONDER_AUTH_STATE_DIR` (optional: encrypted auth-state file directory)
+- `SONDER_AUTH_BROWSER_EXECUTABLE_PATH` (optional: executable path for `/auth login` browser)

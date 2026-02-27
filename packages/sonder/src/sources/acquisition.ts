@@ -34,6 +34,22 @@ export function shouldAttemptReaderProxyFallback(status: SourceStatus, inputUrl:
 	);
 }
 
+export function shouldAttemptAuthBrowserFallback(status: SourceStatus): boolean {
+	if (status === "ok" || status === "not_found") {
+		return false;
+	}
+	return (
+		status === "risk_control" ||
+		status === "login_required" ||
+		status === "forbidden" ||
+		status === "unsupported" ||
+		status === "blocked" ||
+		status === "timeout" ||
+		status === "fetch_failed" ||
+		status === "error"
+	);
+}
+
 export function buildAcquisitionAttempt(input: {
 	method: SourceAcquisitionMethod;
 	inputUrl: string;

@@ -3,6 +3,31 @@ import { formatDiscoveryReasonSummary } from "./telegram-retrieval-reasons.js";
 
 const MAX_TELEGRAM_MESSAGE_LENGTH = 3500;
 
+function formatAuthSessionStatus(status: {
+	domain: string;
+	exists: boolean;
+	status: string;
+	hasEncryptedState: boolean;
+	updatedAt: string | null;
+	lastValidatedAt: string | null;
+	expiresAt: string | null;
+	lastError: string | null;
+}): string {
+	const lines = [
+		`Domain: ${status.domain}`,
+		`Exists: ${status.exists ? "yes" : "no"}`,
+		`Status: ${status.status}`,
+		`Encrypted state: ${status.hasEncryptedState ? "yes" : "no"}`,
+		`Updated: ${status.updatedAt ?? "-"}`,
+		`Validated: ${status.lastValidatedAt ?? "-"}`,
+		`Expires: ${status.expiresAt ?? "-"}`,
+	];
+	if (status.lastError) {
+		lines.push(`Error: ${truncateMiddle(status.lastError, 180)}`);
+	}
+	return lines.join("\n");
+}
+
 function buildSourceFallbackHint(status: string): string {
 	if (status === "risk_control") {
 		return "\nLink usability: WeChat verification/risk control was triggered. Options: retry later, or re-send with pasted text: /save <url> <pasted text>";
@@ -141,6 +166,46 @@ export function formatCommandResult(result: Awaited<ReturnType<SonderApp["proces
 
 	if (result.value.type === "ann-del") {
 		return `Annotation deleted\nID: ${result.value.annotationId}`;
+	}
+	if (result.value.type === "auth-login") {
+		return `Auth session login stored\n${formatAuthSessionStatus(result.value.session)}`;
+	}
+	if (result.value.type === "auth-login-start") {
+		const statusLine = result.value.status.alreadyPending ? "already pending" : "started";
+		return [
+			`Auth login ${statusLine}`,
+			`Domain: ${result.value.status.domain}`,
+			`Login URL: ${result.value.status.loginUrl}`,
+			"",
+			"Complete login in the opened browser window, then run:",
+			`/auth done ${result.value.status.domain}`,
+			"",
+			"To abort:",
+			`/auth cancel ${result.value.status.domain}`,
+		].join("\n");
+	}
+	if (result.value.type === "auth-status") {
+		return `Auth session status\n${formatAuthSessionStatus(result.value.session)}`;
+	}
+	if (result.value.type === "auth-list") {
+		if (result.value.sessions.length === 0) {
+			return "No auth sessions found.";
+		}
+		const lines = result.value.sessions.map((session, index) => {
+			const suffix = session.lastError ? ` (error: ${truncateMiddle(session.lastError, 80)})` : "";
+			return `${index + 1}. ${session.domain} · ${session.status} · encrypted=${session.hasEncryptedState ? "yes" : "no"}${suffix}`;
+		});
+		return `Auth sessions (${result.value.sessions.length})\n\n${lines.join("\n")}`;
+	}
+	if (result.value.type === "auth-logout") {
+		return result.value.revoked
+			? `Auth session revoked\nDomain: ${result.value.domain}`
+			: `No auth session found for domain: ${result.value.domain}`;
+	}
+	if (result.value.type === "auth-login-cancel") {
+		return result.value.cancelled
+			? `Auth login cancelled\nDomain: ${result.value.domain}`
+			: `No pending auth login for domain: ${result.value.domain}`;
 	}
 
 	const citations = result.value.citations.length > 0 ? `\n\nCitations: ${result.value.citations.join(" ")}` : "";

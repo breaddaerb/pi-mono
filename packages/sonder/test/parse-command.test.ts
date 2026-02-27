@@ -125,6 +125,98 @@ describe("parseTelegramCommand", () => {
 		expect(result.value).toEqual({ type: "ann-del", annotationId: "ann_123" });
 	});
 
+	it("parses /auth list with default limit", () => {
+		const result = parseTelegramCommand("/auth list");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected auth list command to parse");
+		expect(result.value).toEqual({ type: "auth-list", limit: 20 });
+	});
+
+	it("parses /auth list with explicit limit", () => {
+		const result = parseTelegramCommand("/auth list 5");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected auth list command to parse");
+		expect(result.value).toEqual({ type: "auth-list", limit: 5 });
+	});
+
+	it("parses /auth status", () => {
+		const result = parseTelegramCommand("/auth status xiaohongshu.com");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected auth status command to parse");
+		expect(result.value).toEqual({ type: "auth-status", domain: "xiaohongshu.com" });
+	});
+
+	it("parses /auth login", () => {
+		const result = parseTelegramCommand("/auth login xiaohongshu.com");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected auth login command to parse");
+		expect(result.value).toEqual({ type: "auth-login", domain: "xiaohongshu.com" });
+	});
+
+	it("parses /auth done", () => {
+		const result = parseTelegramCommand("/auth done xiaohongshu.com");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected auth done command to parse");
+		expect(result.value).toEqual({ type: "auth-done", domain: "xiaohongshu.com" });
+	});
+
+	it("parses /auth cancel", () => {
+		const result = parseTelegramCommand("/auth cancel xiaohongshu.com");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected auth cancel command to parse");
+		expect(result.value).toEqual({ type: "auth-cancel", domain: "xiaohongshu.com" });
+	});
+
+	it("parses /auth logout", () => {
+		const result = parseTelegramCommand("/auth logout reddit.com");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected auth logout command to parse");
+		expect(result.value).toEqual({ type: "auth-logout", domain: "reddit.com" });
+	});
+
+	it("parses /auth login-file", () => {
+		const result = parseTelegramCommand("/auth login-file x.com /tmp/storage-state.json");
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("Expected auth login-file command to parse");
+		expect(result.value).toEqual({
+			type: "auth-login-file",
+			domain: "x.com",
+			storageStatePath: "/tmp/storage-state.json",
+		});
+	});
+
+	it("rejects /auth list with invalid limit", () => {
+		const result = parseTelegramCommand("/auth list many");
+
+		expect(result.ok).toBe(false);
+		if (result.ok) throw new Error("Expected auth list to fail");
+		expect(result.error.code).toBe("MISSING_ARGUMENTS");
+	});
+
+	it("rejects /auth login without domain", () => {
+		const result = parseTelegramCommand("/auth login");
+
+		expect(result.ok).toBe(false);
+		if (result.ok) throw new Error("Expected auth login to fail");
+		expect(result.error.code).toBe("MISSING_ARGUMENTS");
+	});
+
+	it("rejects unsupported /auth action", () => {
+		const result = parseTelegramCommand("/auth refresh x.com");
+
+		expect(result.ok).toBe(false);
+		if (result.ok) throw new Error("Expected auth command to fail");
+		expect(result.error.code).toBe("UNSUPPORTED_COMMAND");
+	});
+
 	it("rejects invalid /ann action", () => {
 		const result = parseTelegramCommand("/ann tag ann_123 #foo");
 

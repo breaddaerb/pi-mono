@@ -1,9 +1,12 @@
 export { AnnotationsRepo } from "./annotations-repo.js";
 export { getArtifactFilePath, getItemArtifactDirectory } from "./artifact-paths.js";
 export { ArtifactsRepo } from "./artifacts-repo.js";
+export { AuthSessionRepo } from "./auth-session-repo.js";
+export { CaptureAttemptRepo } from "./capture-attempt-repo.js";
 export { ChatModeStateRepo, type StoredChatModeState } from "./chat-mode-state-repo.js";
 export { type ContextMark, ContextMarkRepo, type ContextTurnState } from "./context-mark-repo.js";
 export { applyMigrations, type CreateDatabaseOptions, createDatabase } from "./db.js";
 export { DialogueRepo } from "./dialogue-repo.js";
 export { ItemContentRepo } from "./item-content-repo.js";
+export { ItemProvenanceRepo } from "./item-provenance-repo.js";
 export { ItemsRepo } from "./items-repo.js";

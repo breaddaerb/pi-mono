@@ -150,4 +150,21 @@ describe("runCommandOnce", () => {
 			await server.close();
 		}
 	});
+
+	it("enables auth commands when SONDER_AUTH_ENCRYPTION_KEY is set", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sonder-cli-"));
+		tempDirs.push(root);
+		const stdout = new MemoryWritable();
+		const stderr = new MemoryWritable();
+
+		const exitCode = await runCommandOnce(["--root", root, "/auth", "list"], stdout, stderr, {
+			env: {
+				SONDER_AUTH_ENCRYPTION_KEY: "test-auth-key",
+			},
+		});
+		expect(exitCode).toBe(0);
+		const output = JSON.parse(stdout.getText().trim()) as { type: string; sessions: unknown[] };
+		expect(output.type).toBe("auth-list");
+		expect(output.sessions).toEqual([]);
+	});
 });

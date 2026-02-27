@@ -135,6 +135,55 @@ CREATE TABLE IF NOT EXISTS item_contents (
 	fetched_at TEXT,
 	FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
 );
+	`,
+	},
+	{
+		version: 7,
+		sql: `
+CREATE TABLE IF NOT EXISTS auth_sessions (
+	id TEXT PRIMARY KEY,
+	domain TEXT NOT NULL UNIQUE,
+	status TEXT NOT NULL,
+	storage_state_path TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	last_validated_at TEXT,
+	expires_at TEXT,
+	last_error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_updated_at ON auth_sessions(updated_at);
+
+CREATE TABLE IF NOT EXISTS capture_attempts (
+	id TEXT PRIMARY KEY,
+	item_id TEXT NOT NULL,
+	attempt_order INTEGER NOT NULL,
+	attempt_type TEXT NOT NULL,
+	request_url TEXT NOT NULL,
+	status TEXT NOT NULL,
+	reason TEXT,
+	http_status INTEGER,
+	latency_ms INTEGER,
+	meta_json TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_capture_attempts_item_attempt_order
+	ON capture_attempts(item_id, attempt_order);
+
+CREATE TABLE IF NOT EXISTS item_provenance (
+	item_id TEXT PRIMARY KEY,
+	original_url TEXT NOT NULL,
+	capture_method TEXT NOT NULL,
+	winner_attempt_id TEXT,
+	evidence_confidence TEXT NOT NULL,
+	captured_at TEXT NOT NULL,
+	FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE,
+	FOREIGN KEY(winner_attempt_id) REFERENCES capture_attempts(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_item_provenance_capture_method ON item_provenance(capture_method);
 `,
 	},
 ];
